@@ -13,6 +13,7 @@ import type {
 import type {
   CloudMailAccount,
   CloudMailAccountList,
+  CloudMailAttachment,
   CloudMailEmail,
   CloudMailEmailList,
   CloudMailOpenSettings,
@@ -163,9 +164,10 @@ export class CloudMailAdapter implements BackendAdapter {
 
   async deleteAddress(jwt: string): Promise<CfSuccessResponse> {
     const address = extractAddressFromJwt(jwt);
+    const accountId = await this.resolveAccountId(jwt, address);
     await this.request<unknown>('DELETE', '/account/delete', {
       token: extractCloudMailToken(jwt),
-      body: address ? { email: address } : undefined,
+      query: accountId !== undefined ? { accountId } : undefined,
     });
     return { success: true };
   }
@@ -201,7 +203,7 @@ export class CloudMailAdapter implements BackendAdapter {
   async deleteMail(jwt: string, mailId: string): Promise<CfSuccessResponse> {
     await this.request<unknown>('DELETE', '/email/delete', {
       token: extractCloudMailToken(jwt),
-      body: { emailIds: [mailId], ids: [mailId], id: mailId },
+      query: { emailIds: mailId },
     });
     return { success: true };
   }
@@ -212,25 +214,25 @@ export class CloudMailAdapter implements BackendAdapter {
       return { success: true };
     }
 
+    const emailIds = mails.results.map(mail => mail.id).join(',');
     await this.request<unknown>('DELETE', '/email/delete', {
       token: extractCloudMailToken(jwt),
-      body: { emailIds: mails.results.map(mail => mail.id), ids: mails.results.map(mail => mail.id) },
+      query: { emailIds },
     });
     return { success: true };
   }
 
-  private async fetchEmailList(jwt: string, limit: number, offset: number): Promise<CloudMailEmailList> {
-    const pageSize = Math.max(1, limit);
-    const page = Math.floor(offset / pageSize) + 1;
+  private async fetchEmailList(jwt: string, limit: number, _offset: number): Promise<CloudMailEmailList> {
+    const size = Math.max(1, limit);
     const address = extractAddressFromJwt(jwt);
+    const accountId = await this.resolveAccountId(jwt, address);
 
     return this.request<CloudMailEmailList>('GET', '/email/list', {
       token: extractCloudMailToken(jwt),
       query: {
-        page,
-        pageSize,
-        size: pageSize,
-        email: address,
+        accountId,
+        size,
+        timeSort: 'desc',
       },
     });
   }
@@ -243,6 +245,7 @@ export class CloudMailAdapter implements BackendAdapter {
   private async findFirstAddress(jwt: string): Promise<string> {
     const accounts = await this.tryRequest<CloudMailAccountList | CloudMailAccount[]>('GET', '/account/list', {
       token: extractCloudMailToken(jwt),
+      query: { size: 1 },
     });
 
     const list = Array.isArray(accounts) ? accounts : accounts?.list ?? [];
@@ -262,6 +265,24 @@ export class CloudMailAdapter implements BackendAdapter {
       }
       throw err;
     }
+  }
+
+  private async resolveAccountId(jwt: string, address?: string): Promise<number | undefined> {
+    const accounts = await this.tryRequest<CloudMailAccountList | CloudMailAccount[]>('GET', '/account/list', {
+      token: extractCloudMailToken(jwt),
+      query: { size: 100 },
+    });
+
+    const list = Array.isArray(accounts) ? accounts : accounts?.list ?? [];
+
+    if (address) {
+      const match = list.find(a => getAccountAddress(a) === address);
+      if (match) {
+        return toNumericId(match.id);
+      }
+    }
+
+    return toNumericId(list[0]?.id);
   }
 }
 
@@ -339,7 +360,7 @@ function toNumericId(id: string | number | undefined): number | undefined {
 function toRawMail(mail: CloudMailEmail): CfRawMail {
   const id = toNumericId(getEmailId(mail)) ?? 0;
   const address = mail.toEmail ?? mail.to ?? mail.recipient ?? '';
-  const raw = mail.raw ?? mail.content ?? mail.text ?? mail.html ?? '';
+  const raw = mail.raw ?? mail.content ?? mail.html ?? mail.text ?? '';
 
   return {
     id,
@@ -361,10 +382,10 @@ function toParsedMail(mail: CloudMailEmail): CfParsedMail {
     subject: mail.subject ?? '(no subject)',
     from: mail.fromEmail ?? mail.from ?? mail.sender ?? '',
     to: address,
-    text: mail.text ?? mail.content ?? '',
-    html: mail.html ?? '',
+    text: mail.text ?? '',
+    html: mail.content ?? mail.html ?? '',
     created_at: getEmailDate(mail),
-    attachments: mail.attachments?.map(att => ({
+    attachments: (mail.attachments as CloudMailAttachment[] | undefined)?.map(att => ({
       filename: att.filename ?? att.name,
       mimeType: att.mimeType ?? att.mime_type,
       size: att.size,
