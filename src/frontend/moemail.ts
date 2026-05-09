@@ -45,9 +45,7 @@ export class MoemailFormat implements FrontendFormat {
   }
 
   registerRoutes(router: Router, adapter: BackendAdapter): void {
-    const authMiddleware = this.createAuthMiddleware();
-
-    router.post('/api/emails/generate', authMiddleware, async (req: Request<{}, { id: string; email: string }, MoemailGenerateRequestBody>, res: Response, next: NextFunction) => {
+    router.post('/api/emails/generate', async (req: Request<{}, { id: string; email: string }, MoemailGenerateRequestBody>, res: Response, next: NextFunction) => {
       try {
         const { name, domain } = req.body;
 
@@ -66,7 +64,7 @@ export class MoemailFormat implements FrontendFormat {
       }
     });
 
-    router.get('/api/emails/:emailId', authMiddleware, async (req: Request<{ emailId: string }, { messages: MoemailMessageResponse[]; nextCursor?: string; total: number }, undefined, MoemailListQuery>, res: Response, next: NextFunction) => {
+    router.get('/api/emails/:emailId', async (req: Request<{ emailId: string }, { messages: MoemailMessageResponse[]; nextCursor?: string; total: number }, undefined, MoemailListQuery>, res: Response, next: NextFunction) => {
       try {
         const jwt = req.params.emailId;
         const offset = parseCursor(req.query.cursor);
@@ -86,7 +84,7 @@ export class MoemailFormat implements FrontendFormat {
       }
     });
 
-    router.get('/api/emails/:emailId/:messageId', authMiddleware, async (req: Request<{ emailId: string; messageId: string }, { message: MoemailMessageResponse }, undefined, Record<string, string>>, res: Response, next: NextFunction) => {
+    router.get('/api/emails/:emailId/:messageId', async (req: Request<{ emailId: string; messageId: string }, { message: MoemailMessageResponse }, undefined, Record<string, string>>, res: Response, next: NextFunction) => {
       try {
         const jwt = req.params.emailId;
         const message = await adapter.getParsedMail(jwt, req.params.messageId);
@@ -104,7 +102,7 @@ export class MoemailFormat implements FrontendFormat {
       }
     });
 
-    router.delete('/api/emails/:emailId', authMiddleware, async (req: Request<{ emailId: string }>, res: Response, next: NextFunction) => {
+    router.delete('/api/emails/:emailId', async (req: Request<{ emailId: string }>, res: Response, next: NextFunction) => {
       try {
         const jwt = req.params.emailId;
         await adapter.deleteAddress(jwt);
@@ -114,7 +112,7 @@ export class MoemailFormat implements FrontendFormat {
       }
     });
 
-    router.delete('/api/emails/:emailId/:messageId', authMiddleware, async (req: Request<{ emailId: string; messageId: string }>, res: Response, next: NextFunction) => {
+    router.delete('/api/emails/:emailId/:messageId', async (req: Request<{ emailId: string; messageId: string }>, res: Response, next: NextFunction) => {
       try {
         const jwt = req.params.emailId;
         await adapter.deleteMail(jwt, req.params.messageId);

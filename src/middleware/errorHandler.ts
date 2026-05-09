@@ -1,6 +1,10 @@
 import type { Request, Response, NextFunction } from 'express';
-import { CloudflareAdapterError } from '../adapters/cloudflare.js';
 import { wrapError } from '../utils/transformer.js';
+
+interface AdapterError extends Error {
+  statusCode?: number;
+  responseBody?: string;
+}
 
 /**
  * 全局错误处理中间件
@@ -13,14 +17,15 @@ export function errorHandler(
 ): void {
   console.error('[Error]', err.message);
 
-  if (err instanceof CloudflareAdapterError) {
-    // CF 后端返回的错误，映射状态码
-    const statusCode = err.statusCode >= 400 && err.statusCode < 600
-      ? err.statusCode
+  const adapterErr = err as AdapterError;
+  if (adapterErr.statusCode !== undefined) {
+    const statusCode = adapterErr.statusCode >= 400 && adapterErr.statusCode < 600
+      ? adapterErr.statusCode
       : 502;
-    res.status(statusCode).json(
-      wrapError(`Backend error: ${err.responseBody}`, statusCode)
-    );
+    const message = adapterErr.responseBody 
+      ? `Backend error: ${adapterErr.responseBody}`
+      : err.message;
+    res.status(statusCode).json(wrapError(message, statusCode));
     return;
   }
 

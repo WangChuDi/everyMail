@@ -118,8 +118,14 @@ export class CloudMailFormat implements FrontendFormat {
         next: NextFunction
       ) => {
         try {
-          const jwt = buildJwt(undefined, req.query.email);
-          const settings = await adapter.getAddressSettings(jwt);
+          const email = normalizeEmail(req.query.email);
+          if (!email) {
+            res.status(400).json(wrapResponse<null>(400, 'email is required', null));
+            return;
+          }
+
+          const loginResult = await adapter.loginAddress(email, '');
+          const settings = await adapter.getAddressSettings(loginResult.jwt);
           const account = mapAddressToCloudMailAccount(settings.address, settings.address, settings.send_balance);
           const page = parsePage(req.query.page);
           const pageSize = parsePageSize(req.query.pageSize);
@@ -144,8 +150,13 @@ export class CloudMailFormat implements FrontendFormat {
         next: NextFunction
       ) => {
         try {
-          const jwt = buildJwt(req.body.email, undefined);
-          await adapter.deleteAddress(jwt);
+          const email = normalizeEmail(req.body.email);
+          if (!email) {
+            res.status(400).json(wrapResponse<null>(400, 'email is required', null));
+            return;
+          }
+          const loginResult = await adapter.loginAddress(email, '');
+          await adapter.deleteAddress(loginResult.jwt);
           res.json(wrapResponse(200, 'success', null));
         } catch (error) {
           next(error);
@@ -161,11 +172,16 @@ export class CloudMailFormat implements FrontendFormat {
         next: NextFunction
       ) => {
         try {
+          const email = normalizeEmail(req.query.email);
+          if (!email) {
+            res.status(400).json(wrapResponse<null>(400, 'email is required', null));
+            return;
+          }
           const page = parsePage(req.query.page);
           const pageSize = parsePageSize(req.query.pageSize);
           const offset = (page - 1) * pageSize;
-          const jwt = buildJwt(undefined, req.query.email);
-          const result = await adapter.listParsedMails(jwt, pageSize, offset);
+          const loginResult = await adapter.loginAddress(email, '');
+          const result = await adapter.listParsedMails(loginResult.jwt, pageSize, offset);
 
           res.json(wrapResponse(200, 'success', {
             list: result.results.map(mapParsedMailToCloudMailEmail),
@@ -185,11 +201,16 @@ export class CloudMailFormat implements FrontendFormat {
         next: NextFunction
       ) => {
         try {
-          const jwt = buildJwt(req.body.email, undefined);
+          const email = normalizeEmail(req.body.email);
+          if (!email) {
+            res.status(400).json(wrapResponse<null>(400, 'email is required', null));
+            return;
+          }
+          const loginResult = await adapter.loginAddress(email, '');
           const mailIds = collectMailIds(req.body);
 
           for (const mailId of mailIds) {
-            await adapter.deleteMail(jwt, mailId);
+            await adapter.deleteMail(loginResult.jwt, mailId);
           }
 
           res.json(wrapResponse(200, 'success', null));
@@ -237,14 +258,6 @@ function parsePageSize(pageSize?: string): number {
   }
 
   return parsed;
-}
-
-function buildJwt(emailFromBody?: string, emailFromQuery?: string): string {
-  const normalizedBodyEmail = normalizeEmail(emailFromBody);
-  const normalizedQueryEmail = normalizeEmail(emailFromQuery);
-  const email = normalizedBodyEmail || normalizedQueryEmail;
-
-  return email ? `${config.cloudmailAuth}|${email}` : config.cloudmailAuth;
 }
 
 function mapAddressToCloudMailAccount(

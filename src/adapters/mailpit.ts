@@ -70,7 +70,7 @@ export class MailpitAdapter implements BackendAdapter {
     };
 
     if (this.auth) {
-      headers.Authorization = `Basic ${btoa(this.auth)}`;
+      headers.Authorization = `Basic ${Buffer.from(this.auth, 'utf8').toString('base64')}`;
     }
 
     return headers;

@@ -115,6 +115,16 @@ function parseFrontends(raw: string): string[] {
   return raw.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+const VALID_LOG_LEVELS: readonly AppConfig['logLevel'][] = ['debug', 'info', 'warn', 'error'];
+
+function parseLogLevel(raw: string): AppConfig['logLevel'] {
+  if (VALID_LOG_LEVELS.includes(raw as AppConfig['logLevel'])) {
+    return raw as AppConfig['logLevel'];
+  }
+  console.warn(`[config] Invalid LOG_LEVEL "${raw}", falling back to "info"`);
+  return 'info';
+}
+
 export function loadConfig(): AppConfig {
   const cfg: AppConfig = {
     host: getEnv('HOST', '0.0.0.0'),
@@ -145,8 +155,8 @@ export function loadConfig(): AppConfig {
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 
-    jwtSecret: getEnv('JWT_SECRET', 'everymail-dev-secret'),
-    logLevel: getEnv('LOG_LEVEL', 'info') as AppConfig['logLevel'],
+    jwtSecret: getEnv('JWT_SECRET'),
+    logLevel: parseLogLevel(getEnv('LOG_LEVEL', 'info')),
   };
 
   // 启动时打印域名映射

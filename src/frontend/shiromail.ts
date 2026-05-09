@@ -19,7 +19,17 @@ export class ShiroMailFormat implements FrontendFormat {
   readonly routePrefix = '/shiromail';
 
   createAuthMiddleware(): ((req: Request, res: Response, next: NextFunction) => void) | null {
-    return null;
+    if (!config.shiroApiKey) {
+      return null;
+    }
+    return (req: Request, res: Response, next: NextFunction) => {
+      const apiKey = req.header('x-api-key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
+      if (apiKey !== config.shiroApiKey) {
+        res.status(401).json(wrapError('Unauthorized'));
+        return;
+      }
+      next();
+    };
   }
 
   registerRoutes(router: Router, adapter: BackendAdapter): void {
@@ -123,7 +133,7 @@ export class ShiroMailFormat implements FrontendFormat {
         }
 
         if (!resolvedDomain) {
-          res.status(400).json({ error: 'No domain available. Set DEFAULT_DOMAIN or DOMAIN_MAP in .env' });
+          res.status(400).json(wrapError('No domain available. Set DEFAULT_DOMAIN or DOMAIN_MAP in .env'));
           return;
         }
 
@@ -131,7 +141,7 @@ export class ShiroMailFormat implements FrontendFormat {
         const localJwt = signLocalJwt(result.address, result.jwt);
         const mailbox = cfAddressToShiroMailbox(result.address, result.address_id);
 
-        res.json({
+        res.json(wrapResponse({
           id: mailbox.id,
           address: mailbox.address,
           domain: mailbox.domain,
@@ -141,7 +151,7 @@ export class ShiroMailFormat implements FrontendFormat {
           status: mailbox.status,
           token: localJwt,
           cf_jwt: result.jwt,
-        });
+        }));
       } catch (err) {
         next(err);
       }
