@@ -11,7 +11,8 @@ app.use(express.json());
 app.use(requestLogger);
 
 app.use((_req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigin = config.corsOrigin || '*';
+  res.header('Access-Control-Allow-Origin', allowedOrigin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, x-api-key, x-custom-auth, x-user-token');
   if (_req.method === 'OPTIONS') {

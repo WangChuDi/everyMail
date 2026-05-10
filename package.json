@@ -19,8 +19,7 @@
   "dependencies": {
     "express": "^4.21.0",
     "dotenv": "^16.4.5",
-    "jsonwebtoken": "^9.0.2",
-    "undici": "^6.19.0"
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

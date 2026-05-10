@@ -37,6 +37,8 @@ export interface AppConfig {
   cloudmailBaseUrl: string;
   /** CloudMail 后端访问凭证（如 API key/token，按具体适配器使用） */
   cloudmailAuth: string;
+  /** CloudMail 前端认证 token（客户端连接 /cloudmail 路由时需要提供，默认同 CLOUDMAIL_AUTH） */
+  cloudmailFrontendAuth: string;
 
   // ===== ShiroMail 后端侧 =====
 
@@ -75,6 +77,9 @@ export interface AppConfig {
 
   /** 启用的前端格式列表 */
   enabledFrontends: string[];
+
+  /** CORS 允许的 origin（默认 * 允许所有） */
+  corsOrigin: string;
 }
 
 function getEnv(key: string, fallback?: string): string {
@@ -141,6 +146,7 @@ export function loadConfig(): AppConfig {
 
     cloudmailBaseUrl: getEnv('CLOUDMAIL_BASE_URL', '').replace(/\/+$/, ''),
     cloudmailAuth: getEnv('CLOUDMAIL_AUTH', ''),
+    cloudmailFrontendAuth: getEnv('CLOUDMAIL_FRONTEND_AUTH', getEnv('CLOUDMAIL_AUTH', '')),
 
     shiromailBackendUrl: getEnv('SHIROMAIL_BACKEND_URL', '').replace(/\/+$/, ''),
     shiromailBackendApiKey: getEnv('SHIROMAIL_BACKEND_API_KEY', ''),
@@ -154,6 +160,8 @@ export function loadConfig(): AppConfig {
     moemailAuth: getEnv('MOEMAIL_AUTH', ''),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
+
+    corsOrigin: getEnv('CORS_ORIGIN', '*'),
 
     jwtSecret: getEnv('JWT_SECRET'),
     logLevel: parseLogLevel(getEnv('LOG_LEVEL', 'info')),

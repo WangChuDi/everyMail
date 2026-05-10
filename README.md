@@ -48,7 +48,6 @@ everyMail 是一个本地代理服务器，支持 **N 种前端格式 × M 种�
 - Inbucket UI → http://localhost:3100/inbucket/v1/mailbox/test
 - CF 客户端 → http://localhost:3100/cftempmail/api/new_address
 ```
-```
 
 ## 快速开始
 
@@ -194,9 +193,9 @@ npm start
 | 路由                                  | 方法     | 说明           |
 |---------------------------------------|----------|----------------|
 | `/moemail/api/emails/generate`        | POST     | 创建邮箱       |
-| `/moemail/api/emails/:id`             | GET      | 邮件列表       |
-| `/moemail/api/emails/:id/:msgId`      | GET      | 邮件详情       |
-| `/moemail/api/emails/:id`             | DELETE   | 删除邮箱       |
+| `/moemail/api/emails/:emailId`        | GET      | 邮件列表       |
+| `/moemail/api/emails/:emailId/:messageId` | GET  | 邮件详情       |
+| `/moemail/api/emails/:emailId`        | DELETE   | 删除邮箱       |
 
 ### CloudMail 格式（`/cloudmail`）
 

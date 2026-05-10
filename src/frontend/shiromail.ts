@@ -176,6 +176,11 @@ export class ShiroMailFormat implements FrontendFormat {
         const settings = await adapter.getAddressSettings(req.cfJwt!);
         const mailbox = cfAddressToShiroMailbox(settings.address);
 
+        if (req.params.id !== mailbox.id && req.params.id !== mailbox.address) {
+          res.status(404).json(wrapError('Mailbox not found'));
+          return;
+        }
+
         res.json(wrapResponse(mailbox));
       } catch (err) {
         next(err);
@@ -184,6 +189,14 @@ export class ShiroMailFormat implements FrontendFormat {
 
     const deleteCurrentAddress = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       try {
+        const settings = await adapter.getAddressSettings(req.cfJwt!);
+        const mailbox = cfAddressToShiroMailbox(settings.address);
+
+        if (req.params.id !== mailbox.id && req.params.id !== mailbox.address) {
+          res.status(404).json(wrapError('Mailbox not found'));
+          return;
+        }
+
         const result = await adapter.deleteAddress(req.cfJwt!);
         res.json(wrapResponse({ success: result.success }));
       } catch (err) {

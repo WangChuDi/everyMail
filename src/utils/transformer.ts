@@ -73,7 +73,7 @@ export function cfAddressToShiroMailbox(
     address: address,
     domain: parts[1] ?? '',
     local_part: parts[0] ?? '',
-    created_at: new Date().toISOString(),
+    created_at: '1970-01-01T00:00:00.000Z',
     expires_at: null,
     message_count: 0,
     status: 'active',

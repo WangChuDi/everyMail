@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import type { Router, Request, Response, NextFunction } from 'express';
 import type { FrontendFormat } from './types.js';
 import type { BackendAdapter } from '../adapters/base.js';
-import type { CfParsedMail, CfAttachment } from '../types/cloudflare.js';
+import type { CfParsedMail } from '../types/cloudflare.js';
 
 interface InbucketAttachment {
   filename: string;
@@ -30,29 +29,11 @@ interface InbucketMessage {
   attachments: InbucketAttachment[];
 }
 
-function synthesizeAttachmentHash(attachment: CfAttachment): string {
-  const content = attachment.content ?? '';
-  return createHash('md5').update(content).digest('hex');
-}
-
-function mapAttachment(mailbox: string, mailId: string, attachment: CfAttachment, index: number): InbucketAttachment {
-  const partPath = `/v1/mailbox/${encodeURIComponent(mailbox)}/${encodeURIComponent(mailId)}/attachments/${index}`;
-
-  return {
-    filename: attachment.filename ?? '',
-    'content-type': attachment.mimeType ?? 'application/octet-stream',
-    'download-link': `${partPath}/download`,
-    'view-link': `${partPath}/view`,
-    md5: synthesizeAttachmentHash(attachment),
-  };
-}
-
 function mapMail(mailbox: string, mail: CfParsedMail): InbucketMessage {
   const createdAt = new Date(mail.created_at);
   const posixMillis = createdAt.getTime();
   const text = mail.text ?? '';
   const html = mail.html ?? '';
-  const attachments = (mail.attachments ?? []).map((attachment, index) => mapAttachment(mailbox, String(mail.id), attachment, index));
 
   return {
     mailbox,
@@ -69,7 +50,7 @@ function mapMail(mailbox: string, mail: CfParsedMail): InbucketMessage {
       html,
     },
     header: {},
-    attachments,
+    attachments: [],
   };
 }
 

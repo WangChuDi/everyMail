@@ -67,14 +67,14 @@ export class CloudMailFormat implements FrontendFormat {
   readonly routePrefix = '/cloudmail';
 
   createAuthMiddleware(): ((req: Request, res: Response, next: NextFunction) => void) | null {
-    if (!config.cloudmailAuth) {
+    if (!config.cloudmailFrontendAuth) {
       return null;
     }
 
     return (req: Request, res: Response, next: NextFunction): void => {
       const auth = req.header('Authorization');
 
-      if (auth !== config.cloudmailAuth) {
+      if (auth !== config.cloudmailFrontendAuth) {
         res.status(401).json(wrapResponse<null>(401, 'unauthorized', null));
         return;
       }
