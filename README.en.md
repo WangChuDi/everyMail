@@ -145,7 +145,7 @@ npm start
 
 After startup, the server listens on `http://localhost:3100`.
 
-### 4. Docker Deployment
+## Docker Deployment
 
 Use the pre-built image from GitHub Container Registry:
 
@@ -153,11 +153,7 @@ Use the pre-built image from GitHub Container Registry:
 docker run -d \
   --name everymail \
   -p 3100:3100 \
-  -e MAIL_BACKEND=cloudflare_temp_email \
-  -e CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev \
-  -e CF_TEMP_EMAIL_AUTH=your-password \
-  -e JWT_SECRET=your-random-secret \
-  -e ENABLED_FRONTENDS=all \
+  --env-file .env \
   ghcr.io/wangchudi/everymail:latest
 ```
 
@@ -170,12 +166,7 @@ services:
     image: ghcr.io/wangchudi/everymail:latest
     ports:
       - "3100:3100"
-    environment:
-      - MAIL_BACKEND=cloudflare_temp_email
-      - CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev
-      - CF_TEMP_EMAIL_AUTH=your-password
-      - JWT_SECRET=your-random-secret
-      - ENABLED_FRONTENDS=all
+    env_file: .env
     restart: unless-stopped
 ```
 
@@ -185,6 +176,8 @@ Build locally:
 docker build -t everymail .
 docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 ```
+
+> The `.env` file format is the same as for local deployment. Refer to the "Configure" section above or `.env.example`.
 
 ## Frontend Format Routes
 
