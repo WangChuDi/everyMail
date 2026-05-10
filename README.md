@@ -1,3 +1,4 @@
+[English](./README.en.md) | 中文
 # everyMail
 
 临时邮箱平台兼容层 —— 打通不同临时邮箱服务的 API 适配器。
