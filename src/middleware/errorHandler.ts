@@ -6,12 +6,23 @@ interface AdapterError extends Error {
   responseBody?: string;
 }
 
-/**
- * 全局错误处理中间件
- */
+function serializeError(req: Request, statusCode: number, message: string): unknown {
+  const path = req.originalUrl || req.path;
+
+  if (path.startsWith('/shiromail')) {
+    return wrapError(message, statusCode);
+  }
+
+  if (path.startsWith('/cloudmail')) {
+    return { code: statusCode, message, data: null };
+  }
+
+  return { error: message };
+}
+
 export function errorHandler(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ): void {
@@ -25,14 +36,14 @@ export function errorHandler(
     if (adapterErr.responseBody) {
       console.error('[Backend Response]', adapterErr.responseBody);
     }
-    res.status(statusCode).json(wrapError(`Backend error (${statusCode})`, statusCode));
+    res.status(statusCode).json(serializeError(req, statusCode, `Backend error (${statusCode})`));
     return;
   }
 
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-    res.status(401).json(wrapError('Authentication failed'));
+    res.status(401).json(serializeError(req, 401, 'Authentication failed'));
     return;
   }
 
-  res.status(500).json(wrapError('Internal server error'));
+  res.status(500).json(serializeError(req, 500, 'Internal server error'));
 }

@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { FrontendFormat } from './types.js';
-import { BackendAdapter } from '../adapters/base.js';
+import type { FrontendFormat } from './types.js';
+import type { BackendAdapter } from '../adapters/base.js';
 import { config } from '../config.js';
 import type { CfAttachment, CfParsedMail } from '../types/cloudflare.js';
 

@@ -12,7 +12,7 @@ import {
   cfRawMailToShiroMessage,
   cfSettingsToShiroSettings,
 } from '../utils/transformer.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, verifyApiKey } from '../middleware/auth.js';
 
 export class ShiroMailFormat implements FrontendFormat {
   readonly name = 'shiromail';
@@ -22,14 +22,7 @@ export class ShiroMailFormat implements FrontendFormat {
     if (!config.shiroApiKey) {
       return null;
     }
-    return (req: Request, res: Response, next: NextFunction) => {
-      const apiKey = req.header('x-api-key') || (req.query.api_key as string);
-      if (apiKey !== config.shiroApiKey) {
-        res.status(401).json(wrapError('Unauthorized'));
-        return;
-      }
-      next();
-    };
+    return verifyApiKey;
   }
 
   registerRoutes(router: Router, adapter: BackendAdapter): void {

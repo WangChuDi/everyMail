@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { FrontendFormat } from './types.js';
-import { BackendAdapter } from '../adapters/base.js';
+import type { FrontendFormat } from './types.js';
+import type { BackendAdapter } from '../adapters/base.js';
 
 export class CloudflareFormat implements FrontendFormat {
   readonly name = 'cloudflare';
