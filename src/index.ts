@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import { config, getMappedDomains } from './config.js';
+import { config, getMappedDomains, type MailBackend } from './config.js';
 import { createBackendAdapter } from './adapters/index.js';
 import { requestLogger } from './middleware/logger.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -23,6 +23,24 @@ app.use((_req, res, next) => {
 
 const adapter = createBackendAdapter();
 const formats = resolveFormats(config.enabledFrontends);
+
+// Startup compatibility check: warn about auth-free frontends × auth-required backends
+const AUTH_FREE_FRONTENDS = ['inbucket', 'mailpit'];
+const AUTH_REQUIRED_BACKENDS: MailBackend[] = ['cloudflare_temp_email'];
+const enabledAuthFreeFrontends = formats
+  .filter(f => AUTH_FREE_FRONTENDS.includes(f.name))
+  .map(f => f.name);
+
+if (enabledAuthFreeFrontends.length > 0 && AUTH_REQUIRED_BACKENDS.includes(config.mailBackend)) {
+  console.warn('');
+  console.warn('⚠ Compatibility warning:');
+  for (const name of enabledAuthFreeFrontends) {
+    console.warn(`  ${name} frontend + ${config.mailBackend} backend:`);
+    console.warn(`    ${name} protocol has no per-user auth. loginAddress(address, '') may fail`);
+    console.warn(`    for backends requiring real credentials. Consider using a matching backend.`);
+  }
+  console.warn('');
+}
 
 for (const format of formats) {
   const subRouter = Router();

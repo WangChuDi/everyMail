@@ -1,7 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { FrontendFormat } from './types.js';
 import { BackendAdapter } from '../adapters/base.js';
-import { signLocalJwt } from '../utils/jwt.js';
 
 export class CloudflareFormat implements FrontendFormat {
   readonly name = 'cloudflare';
@@ -31,12 +30,8 @@ export class CloudflareFormat implements FrontendFormat {
       try {
         const { name, domain } = req.body;
         const result = await adapter.createAddress(name || '', domain || '');
-        const localJwt = signLocalJwt(result.address, result.jwt);
 
-        res.json({
-          ...result,
-          everymail_jwt: localJwt,
-        });
+        res.json(result);
       } catch (err) {
         next(err);
       }
@@ -46,12 +41,8 @@ export class CloudflareFormat implements FrontendFormat {
       try {
         const { address, password } = req.body;
         const result = await adapter.loginAddress(address, password || '');
-        const localJwt = signLocalJwt(address, result.jwt);
 
-        res.json({
-          ...result,
-          everymail_jwt: localJwt,
-        });
+        res.json(result);
       } catch (err) {
         next(err);
       }

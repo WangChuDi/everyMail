@@ -23,7 +23,7 @@ export class ShiroMailFormat implements FrontendFormat {
       return null;
     }
     return (req: Request, res: Response, next: NextFunction) => {
-      const apiKey = req.header('x-api-key') || req.header('Authorization')?.replace(/^Bearer\s+/i, '');
+      const apiKey = req.header('x-api-key') || (req.query.api_key as string);
       if (apiKey !== config.shiroApiKey) {
         res.status(401).json(wrapError('Unauthorized'));
         return;

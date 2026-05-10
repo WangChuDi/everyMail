@@ -137,7 +137,7 @@ export class CloudMailAdapter implements BackendAdapter {
     });
 
     return {
-      jwt: this.authToken,
+      jwt: `${this.authToken}|${address}`,
       address: getAccountAddress(account) ?? address,
       address_id: toNumericId(account.id),
     };
@@ -223,6 +223,8 @@ export class CloudMailAdapter implements BackendAdapter {
   }
 
   private async fetchEmailList(jwt: string, limit: number, _offset: number): Promise<CloudMailEmailList> {
+    // Note: CloudMail API uses cursor-based pagination (emailId/timeSort), not offset-based.
+    // The _offset parameter is ignored. Always returns the latest emails sorted by timeSort: desc.
     const size = Math.max(1, limit);
     const address = extractAddressFromJwt(jwt);
     const accountId = await this.resolveAccountId(jwt, address);

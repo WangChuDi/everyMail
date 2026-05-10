@@ -22,10 +22,10 @@ export function errorHandler(
     const statusCode = adapterErr.statusCode >= 400 && adapterErr.statusCode < 600
       ? adapterErr.statusCode
       : 502;
-    const message = adapterErr.responseBody 
-      ? `Backend error: ${adapterErr.responseBody}`
-      : err.message;
-    res.status(statusCode).json(wrapError(message, statusCode));
+    if (adapterErr.responseBody) {
+      console.error('[Backend Response]', adapterErr.responseBody);
+    }
+    res.status(statusCode).json(wrapError(`Backend error (${statusCode})`, statusCode));
     return;
   }
 
@@ -34,6 +34,5 @@ export function errorHandler(
     return;
   }
 
-  // 未知错误
   res.status(500).json(wrapError('Internal server error'));
 }

@@ -31,7 +31,11 @@ export class MoemailFormat implements FrontendFormat {
 
   readonly routePrefix = '/moemail';
 
-  createAuthMiddleware(): (req: Request, res: Response, next: NextFunction) => void {
+  createAuthMiddleware(): ((req: Request, res: Response, next: NextFunction) => void) | null {
+    if (!config.moemailAuth) {
+      return null;
+    }
+
     return (req: Request, res: Response, next: NextFunction) => {
       const apiKey = req.header('X-API-Key');
 
