@@ -8,13 +8,32 @@
 
 Temporary email API compatibility layer — connect any frontend client to any backend email service.
 
-```
-┌─────────────┐                  ┌────────────┐                 ┌────────────────┐
-│ Any Frontend │  Native API     │  everyMail │  Adapter        │ Any Backend    │
-│  ShiroMail  │ ──────────────► │            │  Translation    │ CF/Inbucket/   │
-│  Mailpit    │ ◄────────────── │ (Translate)│ ◄─────────────── │ Mailpit/...    │
-│  Inbucket   │                  │   Layer    │                 │                │
-└─────────────┘                  └────────────┘                 └────────────────┘
+```mermaid
+graph LR
+    subgraph Frontend Clients
+        A[ShiroMail]
+        B[Mailpit]
+        C[Inbucket]
+        D[CF Client]
+        E[moemail]
+        F[CloudMail]
+    end
+
+    subgraph everyMail
+        G[Translation Layer]
+    end
+
+    subgraph Backend Services
+        H[cloudflare_temp_email]
+        I[CloudMail]
+        J[ShiroMail]
+        K[Inbucket]
+        L[Mailpit]
+        M[moemail]
+    end
+
+    A & B & C & D & E & F -->|Native API| G
+    G -->|Adapter| H & I & J & K & L & M
 ```
 
 ## Table of Contents
@@ -116,11 +135,23 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
+| `HOST` | No | `0.0.0.0` | Listen address |
 | `PORT` | No | `3100` | Listen port |
 | `MAIL_BACKEND` | Yes | — | Backend type (see matrix) |
-| `JWT_SECRET` | Yes | — | JWT signing secret |
 | `ENABLED_FRONTENDS` | No | `shiromail,cloudflare` | Comma-separated or `all` |
+| `JWT_SECRET` | Yes | — | JWT signing secret |
+| `LOG_LEVEL` | No | `info` | Log level: debug / info / warn / error |
 | `CORS_ORIGIN` | No | `*` | Allowed CORS origin |
+
+### ShiroMail Frontend Format Config
+
+Configuration used when clients connect to the `/shiromail` route:
+
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `SHIROMAIL_API_KEY` | No | — | Client auth API Key, empty = public mode |
+| `DOMAIN_MAP` | No | `{}` | Domain ID → domain mapping (JSON), e.g. `{"1":"example.com"}` |
+| `DEFAULT_DOMAIN` | No | — | Default domain, empty = auto-detect from backend |
 
 ### Backend-Specific
 
@@ -141,7 +172,7 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 |---|---|---|
 | `CLOUDMAIL_BASE_URL` | Yes | CloudMail service URL |
 | `CLOUDMAIL_AUTH` | Yes | Authorization token (no Bearer prefix) |
-| `CLOUDMAIL_FRONTEND_AUTH` | No | Independent auth for CloudMail frontend format |
+| `CLOUDMAIL_FRONTEND_AUTH` | No | Independent auth for CloudMail frontend format, defaults to `CLOUDMAIL_AUTH` |
 
 > Target project: [maillab/cloud-mail](https://github.com/maillab/cloud-mail), API docs: https://doc.skymail.ink/api/api-doc.html
 
@@ -351,14 +382,28 @@ Cloudflare Pages + D1, X-API-Key auth:
 
 ## Architecture
 
-```
-FrontendFormat (frontend interface)    BackendAdapter (backend interface)
-    ├── ShiroMailFormat                ├── CloudflareAdapter
-    ├── CloudflareFormat               ├── CloudMailAdapter
-    ├── InbucketFormat                 ├── ShiroMailAdapter
-    ├── MailpitFormat                  ├── InbucketAdapter
-    ├── MoemailFormat                  ├── MailpitAdapter
-    └── CloudMailFormat                └── MoemailAdapter
+```mermaid
+graph TB
+    subgraph "FrontendFormat"
+        F1[ShiroMailFormat]
+        F2[CloudflareFormat]
+        F3[InbucketFormat]
+        F4[MailpitFormat]
+        F5[MoemailFormat]
+        F6[CloudMailFormat]
+    end
+
+    subgraph "BackendAdapter"
+        B1[CloudflareAdapter]
+        B2[CloudMailAdapter]
+        B3[ShiroMailAdapter]
+        B4[InbucketAdapter]
+        B5[MailpitAdapter]
+        B6[MoemailAdapter]
+    end
+
+    F1 & F2 & F3 & F4 & F5 & F6 --> Router{Router}
+    Router --> B1 & B2 & B3 & B4 & B5 & B6
 ```
 
 - **Add a new frontend format**: implement the `FrontendFormat` interface, one file
@@ -396,27 +441,25 @@ src/
 </details>
 
 <details>
-<summary><b>Authentication Flow Example</b></summary>
+<summary><b>Authentication Flow</b></summary>
 
-```
-ShiroMail Frontend                  everyMail                     CF Backend
-     │                                │                              │
-     ├─ POST /shiromail/auth/register ►│                              │
-     │   { name, domain }             ├─ POST /api/new_address ─────►│
-     │                                │   { name, domain }           │
-     │                                │◄──── { jwt, address } ──────┤
-     │                                │                              │
-     │                                │  Issue everyMail JWT         │
-     │                                │  (embedded CF JWT)           │
-     │◄── { token, user, mailbox } ──┤                              │
-     │                                │                              │
-     ├─ GET /shiromail/mailboxes/:id/messages ─►│                    │
-     │   Authorization: Bearer <everymail-jwt>                       │
-     │                                │  Decode → Extract CF JWT     │
-     │                                ├─ GET /api/parsed_mails ─────►│
-     │                                │   Authorization: Bearer <cf-jwt>
-     │                                │◄──── { results, count } ────┤
-     │◄── { data: messages[] } ──────┤                              │
+```mermaid
+sequenceDiagram
+    participant Client as ShiroMail Frontend
+    participant EM as everyMail
+    participant Backend as CF Backend
+
+    Client->>EM: POST /shiromail/auth/register<br/>{name, domain}
+    EM->>Backend: POST /api/new_address<br/>{name, domain}
+    Backend-->>EM: {jwt, address}
+    Note over EM: Issue everyMail JWT (embedded CF JWT)
+    EM-->>Client: {token, user, mailbox}
+
+    Client->>EM: GET /shiromail/mailboxes/:id/messages<br/>Authorization: Bearer <everymail-jwt>
+    Note over EM: Decode JWT → Extract CF JWT
+    EM->>Backend: GET /api/parsed_mails<br/>Authorization: Bearer <cf-jwt>
+    Backend-->>EM: {results, count}
+    EM-->>Client: {data: messages[]}
 ```
 
 </details>

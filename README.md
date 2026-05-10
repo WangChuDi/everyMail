@@ -8,13 +8,32 @@
 
 临时邮箱 API 兼容层 —— 让任意前端客户端对接任意后端邮箱服务。
 
-```
-┌─────────────┐                  ┌────────────┐                 ┌────────────────┐
-│  任意前端    │  原生 API 格式   │  everyMail │  适配器转换     │  任意后端      │
-│  ShiroMail  │ ──────────────► │            │ ───────────────► │ CF/Inbucket/   │
-│  Mailpit    │ ◄────────────── │  (翻译层)  │ ◄─────────────── │ Mailpit/...    │
-│  Inbucket   │                  │            │                 │                │
-└─────────────┘                  └────────────┘                 └────────────────┘
+```mermaid
+graph LR
+    subgraph 前端客户端
+        A[ShiroMail]
+        B[Mailpit]
+        C[Inbucket]
+        D[CF 客户端]
+        E[moemail]
+        F[CloudMail]
+    end
+
+    subgraph everyMail
+        G[翻译层]
+    end
+
+    subgraph 后端服务
+        H[cloudflare_temp_email]
+        I[CloudMail]
+        J[ShiroMail]
+        K[Inbucket]
+        L[Mailpit]
+        M[moemail]
+    end
+
+    A & B & C & D & E & F -->|原生 API| G
+    G -->|适配器转换| H & I & J & K & L & M
 ```
 
 ## 目录
@@ -116,11 +135,23 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 
 | 变量 | 必填 | 默认值 | 说明 |
 |---|---|---|---|
+| `HOST` | 否 | `0.0.0.0` | 监听地址 |
 | `PORT` | 否 | `3100` | 监听端口 |
 | `MAIL_BACKEND` | 是 | — | 后端类型（见兼容矩阵） |
-| `JWT_SECRET` | 是 | — | JWT 签名密钥 |
 | `ENABLED_FRONTENDS` | 否 | `shiromail,cloudflare` | 启用的前端格式，逗号分隔或 `all` |
+| `JWT_SECRET` | 是 | — | JWT 签名密钥 |
+| `LOG_LEVEL` | 否 | `info` | 日志级别：debug / info / warn / error |
 | `CORS_ORIGIN` | 否 | `*` | CORS 允许的来源 |
+
+### ShiroMail 前端格式配置
+
+客户端连接 `/shiromail` 路由时使用的配置：
+
+| 变量 | 必填 | 默认值 | 说明 |
+|---|---|---|---|
+| `SHIROMAIL_API_KEY` | 否 | — | 客户端认证 API Key，留空为公开模式 |
+| `DOMAIN_MAP` | 否 | `{}` | Domain ID → 域名映射（JSON），如 `{"1":"example.com"}` |
+| `DEFAULT_DOMAIN` | 否 | — | 默认域名，留空则从后端自动获取 |
 
 ### 后端专属配置
 
@@ -141,7 +172,7 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 |---|---|---|
 | `CLOUDMAIL_BASE_URL` | 是 | CloudMail 服务地址 |
 | `CLOUDMAIL_AUTH` | 是 | Authorization token（无 Bearer 前缀） |
-| `CLOUDMAIL_FRONTEND_AUTH` | 否 | CloudMail 前端格式独立认证 |
+| `CLOUDMAIL_FRONTEND_AUTH` | 否 | CloudMail 前端格式独立认证，默认同 `CLOUDMAIL_AUTH` |
 
 > 目标项目：[maillab/cloud-mail](https://github.com/maillab/cloud-mail)，API 文档：https://doc.skymail.ink/api/api-doc.html
 
@@ -351,14 +382,28 @@ Cloudflare Pages + D1，X-API-Key 认证：
 
 ## 架构设计
 
-```
-FrontendFormat (前端接口)          BackendAdapter (后端接口)
-    ├── ShiroMailFormat                ├── CloudflareAdapter
-    ├── CloudflareFormat               ├── CloudMailAdapter
-    ├── InbucketFormat                 ├── ShiroMailAdapter
-    ├── MailpitFormat                  ├── InbucketAdapter
-    ├── MoemailFormat                  ├── MailpitAdapter
-    └── CloudMailFormat                └── MoemailAdapter
+```mermaid
+graph TB
+    subgraph "FrontendFormat 前端接口"
+        F1[ShiroMailFormat]
+        F2[CloudflareFormat]
+        F3[InbucketFormat]
+        F4[MailpitFormat]
+        F5[MoemailFormat]
+        F6[CloudMailFormat]
+    end
+
+    subgraph "BackendAdapter 后端接口"
+        B1[CloudflareAdapter]
+        B2[CloudMailAdapter]
+        B3[ShiroMailAdapter]
+        B4[InbucketAdapter]
+        B5[MailpitAdapter]
+        B6[MoemailAdapter]
+    end
+
+    F1 & F2 & F3 & F4 & F5 & F6 --> Router{路由分发}
+    Router --> B1 & B2 & B3 & B4 & B5 & B6
 ```
 
 - **添加新前端格式**：实现 `FrontendFormat` 接口，一个文件搞定
@@ -396,27 +441,25 @@ src/
 </details>
 
 <details>
-<summary><b>认证流程示例</b></summary>
+<summary><b>认证流程</b></summary>
 
-```
-ShiroMail 前端                     everyMail                     CF 后端
-     │                                │                              │
-     ├─ POST /shiromail/auth/register ►│                              │
-     │   { name, domain }             ├─ POST /api/new_address ─────►│
-     │                                │   { name, domain }           │
-     │                                │◄──── { jwt, address } ──────┤
-     │                                │                              │
-     │                                │  签发 everyMail JWT          │
-     │                                │  (内嵌 CF JWT)               │
-     │◄── { token, user, mailbox } ──┤                              │
-     │                                │                              │
-     ├─ GET /shiromail/mailboxes/:id/messages ─►│                    │
-     │   Authorization: Bearer <everymail-jwt>                       │
-     │                                │  解码 → 提取 CF JWT          │
-     │                                ├─ GET /api/parsed_mails ─────►│
-     │                                │   Authorization: Bearer <cf-jwt>
-     │                                │◄──── { results, count } ────┤
-     │◄── { data: messages[] } ──────┤                              │
+```mermaid
+sequenceDiagram
+    participant Client as ShiroMail 前端
+    participant EM as everyMail
+    participant Backend as CF 后端
+
+    Client->>EM: POST /shiromail/auth/register<br/>{name, domain}
+    EM->>Backend: POST /api/new_address<br/>{name, domain}
+    Backend-->>EM: {jwt, address}
+    Note over EM: 签发 everyMail JWT（内嵌 CF JWT）
+    EM-->>Client: {token, user, mailbox}
+
+    Client->>EM: GET /shiromail/mailboxes/:id/messages<br/>Authorization: Bearer <everymail-jwt>
+    Note over EM: 解码 JWT → 提取 CF JWT
+    EM->>Backend: GET /api/parsed_mails<br/>Authorization: Bearer <cf-jwt>
+    Backend-->>EM: {results, count}
+    EM-->>Client: {data: messages[]}
 ```
 
 </details>
