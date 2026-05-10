@@ -145,6 +145,47 @@ npm start
 
 服务器启动后会监听在 `http://localhost:3100`。
 
+### 4. Docker 部署
+
+使用 GitHub Container Registry 预构建镜像：
+
+```bash
+docker run -d \
+  --name everymail \
+  -p 3100:3100 \
+  -e MAIL_BACKEND=cloudflare_temp_email \
+  -e CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev \
+  -e CF_TEMP_EMAIL_AUTH=your-password \
+  -e JWT_SECRET=your-random-secret \
+  -e ENABLED_FRONTENDS=all \
+  ghcr.io/wangchudi/everymail:latest
+```
+
+或使用 docker-compose：
+
+```yaml
+# docker-compose.yml
+services:
+  everymail:
+    image: ghcr.io/wangchudi/everymail:latest
+    ports:
+      - "3100:3100"
+    environment:
+      - MAIL_BACKEND=cloudflare_temp_email
+      - CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev
+      - CF_TEMP_EMAIL_AUTH=your-password
+      - JWT_SECRET=your-random-secret
+      - ENABLED_FRONTENDS=all
+    restart: unless-stopped
+```
+
+本地构建镜像：
+
+```bash
+docker build -t everymail .
+docker run -d --name everymail -p 3100:3100 --env-file .env everymail
+```
+
 ## 前端格式路由
 
 每种前端格式暴露对应项目的原生 API，所有格式都路由到 `MAIL_BACKEND` 配置的后端。

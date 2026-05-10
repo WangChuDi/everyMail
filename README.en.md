@@ -145,6 +145,47 @@ npm start
 
 After startup, the server listens on `http://localhost:3100`.
 
+### 4. Docker Deployment
+
+Use the pre-built image from GitHub Container Registry:
+
+```bash
+docker run -d \
+  --name everymail \
+  -p 3100:3100 \
+  -e MAIL_BACKEND=cloudflare_temp_email \
+  -e CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev \
+  -e CF_TEMP_EMAIL_AUTH=your-password \
+  -e JWT_SECRET=your-random-secret \
+  -e ENABLED_FRONTENDS=all \
+  ghcr.io/wangchudi/everymail:latest
+```
+
+Or use docker-compose:
+
+```yaml
+# docker-compose.yml
+services:
+  everymail:
+    image: ghcr.io/wangchudi/everymail:latest
+    ports:
+      - "3100:3100"
+    environment:
+      - MAIL_BACKEND=cloudflare_temp_email
+      - CF_TEMP_EMAIL_BASE_URL=https://your-cf-worker.workers.dev
+      - CF_TEMP_EMAIL_AUTH=your-password
+      - JWT_SECRET=your-random-secret
+      - ENABLED_FRONTENDS=all
+    restart: unless-stopped
+```
+
+Build locally:
+
+```bash
+docker build -t everymail .
+docker run -d --name everymail -p 3100:3100 --env-file .env everymail
+```
+
 ## Frontend Format Routes
 
 Each frontend format exposes the native API of its corresponding project, and all formats are routed to the backend configured by `MAIL_BACKEND`.
