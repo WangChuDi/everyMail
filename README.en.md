@@ -375,6 +375,10 @@ ShiroMail Frontend                  everyMail                     CF Backend
      │◄── { data: messages[] } ──────┤                              │
 ```
 
+## 🙏 Acknowledgments
+
+This project has been published on the [LINUX DO community](https://linux.do). Thanks to the community for their support and feedback.
+
 ## License
 
 MIT
