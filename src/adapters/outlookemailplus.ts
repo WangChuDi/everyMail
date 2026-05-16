@@ -56,6 +56,8 @@ interface OutlookEmailPlusMailboxState {
   taskId?: string;
 }
 
+const MESSAGE_ID_CACHE_LIMIT = 500;
+
 /**
  * OutlookEmailPlus 后端适配器。
  *
@@ -69,6 +71,7 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
   private provider: string;
   private callerId: string;
   private projectKey: string;
+  private messageIdCache = new Map<string, Map<number, string>>();
 
   constructor(baseUrl?: string, apiKey?: string) {
     this.baseUrl = baseUrl ?? config.outlookEmailPlusBaseUrl;
@@ -311,6 +314,8 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
     });
 
     const messages = data.emails ?? [];
+    this.rememberMessageIds(email, messages);
+
     return {
       messages,
       count: data.count ?? messages.length,
@@ -318,13 +323,69 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
   }
 
   private async resolveMessageId(email: string, mailId: string): Promise<string> {
-    const list = await this.fetchMessages(email, 50, 0);
-    const match = list.messages.find(message => {
-      const id = String(message.id);
-      return id === mailId || String(toNumericId(id)) === mailId;
-    });
+    const numericId = Number.parseInt(mailId, 10);
+    if (!Number.isNaN(numericId)) {
+      const cachedId = this.getCachedMessageId(email, numericId);
+      if (cachedId) {
+        return cachedId;
+      }
+    }
 
-    return match ? String(match.id) : mailId;
+    await this.fetchMessages(email, 50, 0);
+    if (!Number.isNaN(numericId)) {
+      const cachedId = this.getCachedMessageId(email, numericId);
+      if (cachedId) {
+        return cachedId;
+      }
+    }
+
+    return mailId;
+  }
+
+  private rememberMessageIds(email: string, messages: OutlookEmailPlusMessage[]): void {
+    const cache = this.getMessageCache(email);
+
+    for (const message of messages) {
+      const providerId = String(message.id);
+      const numericId = toNumericId(providerId);
+      cache.delete(numericId);
+      cache.set(numericId, providerId);
+    }
+
+    while (cache.size > MESSAGE_ID_CACHE_LIMIT) {
+      const oldestId = cache.keys().next().value;
+      if (oldestId === undefined) {
+        break;
+      }
+      cache.delete(oldestId);
+    }
+  }
+
+  private getCachedMessageId(email: string, numericId: number): string | undefined {
+    const cache = this.messageIdCache.get(email);
+    if (!cache) {
+      return undefined;
+    }
+
+    const providerId = cache.get(numericId);
+    if (!providerId) {
+      return undefined;
+    }
+
+    cache.delete(numericId);
+    cache.set(numericId, providerId);
+    return providerId;
+  }
+
+  private getMessageCache(email: string): Map<number, string> {
+    const existing = this.messageIdCache.get(email);
+    if (existing) {
+      return existing;
+    }
+
+    const created = new Map<number, string>();
+    this.messageIdCache.set(email, created);
+    return created;
   }
 }
 
