@@ -78,6 +78,8 @@ export interface AppConfig {
   outlookEmailPlusCallerId: string;
   /** OutlookEmailPlus pool project key */
   outlookEmailPlusProjectKey: string;
+  /** OutlookEmailPlus frontend API key */
+  outlookEmailPlusFrontendAuth: string;
 
   // ===== 内部 =====
 
@@ -124,7 +126,7 @@ function parseMailBackend(raw: string): MailBackend {
   return 'cloudflare_temp_email';
 }
 
-const ALL_FRONTENDS = ['shiromail', 'cloudflare', 'inbucket', 'mailpit', 'moemail', 'cloudmail'];
+const ALL_FRONTENDS = ['shiromail', 'cloudflare', 'inbucket', 'mailpit', 'moemail', 'cloudmail', 'outlookemailplus'];
 
 function parseFrontends(raw: string): string[] {
   if (raw.trim().toLowerCase() === 'all') {
@@ -177,6 +179,7 @@ export function loadConfig(): AppConfig {
     outlookEmailPlusProvider: getEnv('OUTLOOKEMAILPLUS_PROVIDER', 'outlook'),
     outlookEmailPlusCallerId: getEnv('OUTLOOKEMAILPLUS_CALLER_ID', 'everymail'),
     outlookEmailPlusProjectKey: getEnv('OUTLOOKEMAILPLUS_PROJECT_KEY', ''),
+    outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', '') || getEnv('OUTLOOKEMAILPLUS_AUTH', ''),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 
