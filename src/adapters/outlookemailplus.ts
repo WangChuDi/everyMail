@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
 import type { BackendAdapter } from './base.js';
 import type {
@@ -57,6 +58,9 @@ interface OutlookEmailPlusMailboxState {
 }
 
 const MESSAGE_ID_CACHE_LIMIT = 500;
+const MESSAGE_ID_MAILBOX_CACHE_LIMIT = 200;
+const MESSAGE_ID_RESOLVE_PAGE_SIZE = 50;
+const MESSAGE_ID_RESOLVE_PAGE_LIMIT = 10;
 
 /**
  * OutlookEmailPlus 后端适配器。
@@ -220,6 +224,8 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
 
   async deleteAddress(jwt: string): Promise<CfSuccessResponse> {
     const state = decodeMailboxState(jwt);
+    this.messageIdCache.delete(state.email);
+
     if (!hasClaim(state)) {
       return { success: true };
     }
@@ -260,6 +266,9 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
   async getMail(jwt: string, mailId: string): Promise<CfRawMail | null> {
     const state = decodeMailboxState(jwt);
     const resolvedId = await this.resolveMessageId(state.email, mailId);
+    if (!resolvedId) {
+      return null;
+    }
 
     try {
       const message = await this.request<OutlookEmailPlusMessage>(
@@ -279,6 +288,9 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
   async getParsedMail(jwt: string, mailId: string): Promise<CfParsedMail | null> {
     const state = decodeMailboxState(jwt);
     const resolvedId = await this.resolveMessageId(state.email, mailId);
+    if (!resolvedId) {
+      return null;
+    }
 
     try {
       const message = await this.request<OutlookEmailPlusMessage>(
@@ -322,27 +334,37 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
     };
   }
 
-  private async resolveMessageId(email: string, mailId: string): Promise<string> {
+  private async resolveMessageId(email: string, mailId: string): Promise<string | null> {
     const numericId = Number.parseInt(mailId, 10);
-    if (!Number.isNaN(numericId)) {
-      const cachedId = this.getCachedMessageId(email, numericId);
-      if (cachedId) {
-        return cachedId;
+    if (Number.isNaN(numericId)) {
+      return mailId;
+    }
+
+    const cachedId = this.getCachedMessageId(email, numericId);
+    if (cachedId) {
+      return cachedId;
+    }
+
+    for (let page = 0; page < MESSAGE_ID_RESOLVE_PAGE_LIMIT; page += 1) {
+      const offset = page * MESSAGE_ID_RESOLVE_PAGE_SIZE;
+      const result = await this.fetchMessages(email, MESSAGE_ID_RESOLVE_PAGE_SIZE, offset);
+      const resolvedId = this.getCachedMessageId(email, numericId);
+      if (resolvedId) {
+        return resolvedId;
+      }
+      if (result.messages.length < MESSAGE_ID_RESOLVE_PAGE_SIZE || offset + result.messages.length >= result.count) {
+        break;
       }
     }
 
-    await this.fetchMessages(email, 50, 0);
-    if (!Number.isNaN(numericId)) {
-      const cachedId = this.getCachedMessageId(email, numericId);
-      if (cachedId) {
-        return cachedId;
-      }
-    }
-
-    return mailId;
+    return null;
   }
 
   private rememberMessageIds(email: string, messages: OutlookEmailPlusMessage[]): void {
+    if (messages.length === 0) {
+      return;
+    }
+
     const cache = this.getMessageCache(email);
 
     for (const message of messages) {
@@ -352,13 +374,7 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
       cache.set(numericId, providerId);
     }
 
-    while (cache.size > MESSAGE_ID_CACHE_LIMIT) {
-      const oldestId = cache.keys().next().value;
-      if (oldestId === undefined) {
-        break;
-      }
-      cache.delete(oldestId);
-    }
+    trimMapToLimit(cache, MESSAGE_ID_CACHE_LIMIT);
   }
 
   private getCachedMessageId(email: string, numericId: number): string | undefined {
@@ -366,6 +382,9 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
     if (!cache) {
       return undefined;
     }
+
+    this.messageIdCache.delete(email);
+    this.messageIdCache.set(email, cache);
 
     const providerId = cache.get(numericId);
     if (!providerId) {
@@ -380,11 +399,14 @@ export class OutlookEmailPlusAdapter implements BackendAdapter {
   private getMessageCache(email: string): Map<number, string> {
     const existing = this.messageIdCache.get(email);
     if (existing) {
+      this.messageIdCache.delete(email);
+      this.messageIdCache.set(email, existing);
       return existing;
     }
 
     const created = new Map<number, string>();
     this.messageIdCache.set(email, created);
+    trimMapToLimit(this.messageIdCache, MESSAGE_ID_MAILBOX_CACHE_LIMIT);
     return created;
   }
 }
@@ -439,23 +461,23 @@ function createTaskId(): string {
 }
 
 function encodeMailboxState(state: OutlookEmailPlusMailboxState): string {
-  return Buffer.from(JSON.stringify(state), 'utf8').toString('base64url');
+  return jwt.sign(state, config.jwtSecret, { expiresIn: '24h' });
 }
 
-function decodeMailboxState(jwt: string): OutlookEmailPlusMailboxState {
+function decodeMailboxState(token: string): OutlookEmailPlusMailboxState {
   try {
-    const parsed = JSON.parse(Buffer.from(jwt, 'base64url').toString('utf8')) as unknown;
-    if (isMailboxState(parsed)) {
-      return parsed;
+    const verified = jwt.verify(token, config.jwtSecret);
+    if (isMailboxState(verified)) {
+      return verified;
     }
   } catch (err) {
     if (err instanceof Error) {
-      return { email: jwt };
+      throw new OutlookEmailPlusAdapterError('Invalid OutlookEmailPlus mailbox token', 401, '');
     }
     throw err;
   }
 
-  return { email: jwt };
+  throw new OutlookEmailPlusAdapterError('Invalid OutlookEmailPlus mailbox token', 401, '');
 }
 
 function isMailboxState(value: unknown): value is OutlookEmailPlusMailboxState {
@@ -470,6 +492,16 @@ function hasClaim(state: OutlookEmailPlusMailboxState): state is Required<Pick<O
     && typeof state.claimToken === 'string'
     && typeof state.callerId === 'string'
     && typeof state.taskId === 'string';
+}
+
+function trimMapToLimit<K, V>(map: Map<K, V>, limit: number): void {
+  while (map.size > limit) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    map.delete(oldestKey);
+  }
 }
 
 function toRawMail(message: OutlookEmailPlusMessage, fallbackAddress: string): CfRawMail {
