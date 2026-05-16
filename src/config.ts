@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail';
+export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus';
 
 export interface AppConfig {
   /** 监听地址 */
@@ -66,6 +66,21 @@ export interface AppConfig {
   /** moemail auth token */
   moemailAuth: string;
 
+  // ===== OutlookEmailPlus 侧 =====
+
+  /** OutlookEmailPlus base URL */
+  outlookEmailPlusBaseUrl: string;
+  /** OutlookEmailPlus external API key */
+  outlookEmailPlusAuth: string;
+  /** OutlookEmailPlus pool provider filter */
+  outlookEmailPlusProvider: string;
+  /** OutlookEmailPlus pool caller ID */
+  outlookEmailPlusCallerId: string;
+  /** OutlookEmailPlus pool project key */
+  outlookEmailPlusProjectKey: string;
+  /** OutlookEmailPlus frontend API key */
+  outlookEmailPlusFrontendAuth: string;
+
   // ===== 内部 =====
 
   /** 本地 JWT 签名密钥 */
@@ -100,7 +115,7 @@ function parseJsonObject(raw: string): Record<string, string> {
 }
 
 const VALID_BACKENDS: readonly MailBackend[] = [
-  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail',
+  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus',
 ];
 
 function parseMailBackend(raw: string): MailBackend {
@@ -111,7 +126,7 @@ function parseMailBackend(raw: string): MailBackend {
   return 'cloudflare_temp_email';
 }
 
-const ALL_FRONTENDS = ['shiromail', 'cloudflare', 'inbucket', 'mailpit', 'moemail', 'cloudmail'];
+const ALL_FRONTENDS = ['shiromail', 'cloudflare', 'inbucket', 'mailpit', 'moemail', 'cloudmail', 'outlookemailplus'];
 
 function parseFrontends(raw: string): string[] {
   if (raw.trim().toLowerCase() === 'all') {
@@ -158,6 +173,13 @@ export function loadConfig(): AppConfig {
 
     moemailBaseUrl: getEnv('MOEMAIL_BASE_URL', '').replace(/\/+$/, ''),
     moemailAuth: getEnv('MOEMAIL_AUTH', ''),
+
+    outlookEmailPlusBaseUrl: getEnv('OUTLOOKEMAILPLUS_BASE_URL', '').replace(/\/+$/, ''),
+    outlookEmailPlusAuth: getEnv('OUTLOOKEMAILPLUS_AUTH', ''),
+    outlookEmailPlusProvider: getEnv('OUTLOOKEMAILPLUS_PROVIDER', 'outlook'),
+    outlookEmailPlusCallerId: getEnv('OUTLOOKEMAILPLUS_CALLER_ID', 'everymail'),
+    outlookEmailPlusProjectKey: getEnv('OUTLOOKEMAILPLUS_PROJECT_KEY', ''),
+    outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', getEnv('OUTLOOKEMAILPLUS_AUTH', '')),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 

@@ -5,6 +5,7 @@ import { InbucketFormat } from './inbucket.js';
 import { MailpitFormat } from './mailpit.js';
 import { MoemailFormat } from './moemail.js';
 import { CloudMailFormat } from './cloudmail.js';
+import { OutlookEmailPlusFormat } from './outlookemailplus.js';
 
 const ALL_FORMATS: FrontendFormat[] = [
   new ShiroMailFormat(),
@@ -13,6 +14,7 @@ const ALL_FORMATS: FrontendFormat[] = [
   new MailpitFormat(),
   new MoemailFormat(),
   new CloudMailFormat(),
+  new OutlookEmailPlusFormat(),
 ];
 
 export function resolveFormats(enabledNames: string[]): FrontendFormat[] {

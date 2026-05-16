@@ -17,6 +17,7 @@ graph LR
         D[CF Client]
         E[moemail]
         F[CloudMail]
+        O[OutlookEmailPlus]
     end
 
     subgraph everyMail
@@ -30,10 +31,11 @@ graph LR
         K[Inbucket]
         L[Mailpit]
         M[moemail]
+        N[OutlookEmailPlus]
     end
 
-    A & B & C & D & E & F -->|Native API| G
-    G -->|Adapter| H & I & J & K & L & M
+    A & B & C & D & E & F & O -->|Native API| G
+    G -->|Adapter| H & I & J & K & L & M & N
 ```
 
 ## Table of Contents
@@ -50,7 +52,7 @@ graph LR
 
 ## Features
 
-- **N×M Matrix** — 6 frontend formats × 6 backends, any combination
+- **N×M Matrix** — 7 frontend formats × 7 backends, any combination
 - **Zero-modification access** — Frontend clients connect directly without changes
 - **One-switch backend migration** — Change `MAIL_BACKEND` to switch
 - **Docker one-liner** — Pre-built multi-arch images (amd64/arm64)
@@ -68,6 +70,7 @@ graph LR
 | `inbucket` | [Inbucket](https://github.com/inbucket/inbucket) | SMTP testing tool, no auth required |
 | `mailpit` | [Mailpit](https://github.com/axllent/mailpit) | Global inbox mode |
 | `moemail` | [moemail](https://github.com/beilunyang/moemail) | Cloudflare Pages + D1 |
+| `outlookemailplus` | [OutlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus) | Controlled External API + mail pool |
 
 ### Frontend Formats (`ENABLED_FRONTENDS`)
 
@@ -79,6 +82,7 @@ graph LR
 | `mailpit` | `/mailpit` | Mailpit REST API v1 |
 | `moemail` | `/moemail` | moemail REST API |
 | `cloudmail` | `/cloudmail` | CloudMail REST API |
+| `outlookemailplus` | `/outlookemailplus` | OutlookEmailPlus External API |
 
 > Any frontend × any backend can be combined. Example: Mailpit UI → moemail backend.
 
@@ -217,6 +221,22 @@ Configuration used when clients connect to the `/shiromail` route:
 
 </details>
 
+<details>
+<summary><b>OutlookEmailPlus</b></summary>
+
+| Variable | Required | Notes |
+|---|---|---|
+| `OUTLOOKEMAILPLUS_BASE_URL` | Yes | OutlookEmailPlus service URL |
+| `OUTLOOKEMAILPLUS_AUTH` | Yes | External API Key (`X-API-Key`) |
+| `OUTLOOKEMAILPLUS_PROVIDER` | No | Mail-pool provider, default `outlook` |
+| `OUTLOOKEMAILPLUS_CALLER_ID` | No | Mail-pool caller_id, default `everymail` |
+| `OUTLOOKEMAILPLUS_PROJECT_KEY` | No | Mail-pool project_key for project isolation/reuse |
+| `OUTLOOKEMAILPLUS_FRONTEND_AUTH` | No | Auth key for the OutlookEmailPlus frontend format, defaults to `OUTLOOKEMAILPLUS_AUTH` |
+
+> Target project: [ZeroPointSix/outlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus), using the controlled `/api/external/*` API.
+
+</details>
+
 ## API Routes
 
 Each frontend format exposes the native API of its corresponding project. All requests route to the configured `MAIL_BACKEND`.
@@ -294,6 +314,21 @@ Each frontend format exposes the native API of its corresponding project. All re
 | `/cloudmail/account/list` | GET | Account list |
 | `/cloudmail/email/list` | GET | Message list |
 | `/cloudmail/email/delete` | DELETE | Delete message |
+
+</details>
+
+<details>
+<summary><b>OutlookEmailPlus (/outlookemailplus)</b></summary>
+
+| Route | Method | Notes |
+|---|---|---|
+| `/outlookemailplus/api/external/health` | GET | Health check |
+| `/outlookemailplus/api/external/pool/claim-random` | POST | Claim/create mailbox |
+| `/outlookemailplus/api/external/pool/claim-release` | POST | Release mailbox |
+| `/outlookemailplus/api/external/pool/claim-complete` | POST | Mark task complete (compatible no-op) |
+| `/outlookemailplus/api/external/messages` | GET | Message list |
+| `/outlookemailplus/api/external/messages/:id` | GET | Message detail |
+| `/outlookemailplus/api/external/messages/:id/raw` | GET | Raw message detail |
 
 </details>
 
@@ -380,6 +415,22 @@ Cloudflare Pages + D1, X-API-Key auth:
 
 </details>
 
+<details>
+<summary><b>OutlookEmailPlus Mapping</b></summary>
+
+Uses the controlled External API for mail reading; mailbox creation maps to mail-pool claiming:
+
+| everyMail Semantic | OutlookEmailPlus API | Notes |
+|---|---|---|
+| Create mailbox | `POST /api/external/pool/claim-random` | Returns email and claim_token |
+| Login | Local state wrapper | Read APIs are called by email |
+| Message list | `GET /api/external/messages` | Uses `email`, `skip`, `top` |
+| Message detail | `GET /api/external/messages/:id` | Uses the `email` query parameter |
+| Delete message | Not supported | Returns success for compatibility |
+| Delete mailbox | `POST /api/external/pool/claim-release` | Only releases mailboxes claimed by this adapter |
+
+</details>
+
 ## Architecture
 
 ```mermaid
@@ -391,6 +442,7 @@ graph TB
         F4[MailpitFormat]
         F5[MoemailFormat]
         F6[CloudMailFormat]
+        F7[OutlookEmailPlusFormat]
     end
 
     subgraph "BackendAdapter"
@@ -400,10 +452,11 @@ graph TB
         B4[InbucketAdapter]
         B5[MailpitAdapter]
         B6[MoemailAdapter]
+        B7[OutlookEmailPlusAdapter]
     end
 
-    F1 & F2 & F3 & F4 & F5 & F6 --> Router{Router}
-    Router --> B1 & B2 & B3 & B4 & B5 & B6
+    F1 & F2 & F3 & F4 & F5 & F6 & F7 --> Router{Router}
+    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7
 ```
 
 - **Add a new frontend format**: implement the `FrontendFormat` interface, one file
@@ -417,15 +470,16 @@ src/
 ├── index.ts              # Entry point, registry loop mounting
 ├── config.ts             # Configuration management
 ├── types/                # API type definitions
-├── adapters/             # Backend adapters (6)
+├── adapters/             # Backend adapters (7)
 │   ├── base.ts           # BackendAdapter interface
 │   ├── cloudflare.ts
 │   ├── cloudmail.ts
 │   ├── shiromail.ts
 │   ├── inbucket.ts
 │   ├── mailpit.ts
-│   └── moemail.ts
-├── frontend/             # Frontend formats (6)
+│   ├── moemail.ts
+│   └── outlookemailplus.ts
+├── frontend/             # Frontend formats (7)
 │   ├── types.ts          # FrontendFormat interface
 │   ├── index.ts          # Format registry
 │   ├── shiromail.ts
@@ -433,7 +487,8 @@ src/
 │   ├── inbucket.ts
 │   ├── mailpit.ts
 │   ├── moemail.ts
-│   └── cloudmail.ts
+│   ├── cloudmail.ts
+│   └── outlookemailplus.ts
 ├── middleware/           # Auth, logging, error handling
 └── utils/               # JWT, data transformation
 ```
