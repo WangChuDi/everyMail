@@ -30,10 +30,11 @@ graph LR
         K[Inbucket]
         L[Mailpit]
         M[moemail]
+        N[OutlookEmailPlus]
     end
 
     A & B & C & D & E & F -->|原生 API| G
-    G -->|适配器转换| H & I & J & K & L & M
+    G -->|适配器转换| H & I & J & K & L & M & N
 ```
 
 ## 目录
@@ -50,7 +51,7 @@ graph LR
 
 ## 特性
 
-- **N×M 矩阵** — 6 种前端格式 × 6 种后端，任意组合
+- **N×M 矩阵** — 6 种前端格式 × 7 种后端，任意组合
 - **零改造接入** — 前端客户端无需修改，直接对接 everyMail
 - **一键切换后端** — 修改 `MAIL_BACKEND` 即可迁移
 - **Docker 一行启动** — 预构建多架构镜像（amd64/arm64）
@@ -68,6 +69,7 @@ graph LR
 | `inbucket` | [Inbucket](https://github.com/inbucket/inbucket) | SMTP 测试工具，无需认证 |
 | `mailpit` | [Mailpit](https://github.com/axllent/mailpit) | 全局收件箱模式 |
 | `moemail` | [moemail](https://github.com/beilunyang/moemail) | Cloudflare Pages + D1 |
+| `outlookemailplus` | [OutlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus) | 受控 External API + 邮箱池 |
 
 ### 前端格式（`ENABLED_FRONTENDS`）
 
@@ -214,6 +216,21 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 |---|---|---|
 | `MOEMAIL_BASE_URL` | 是 | moemail 服务地址 |
 | `MOEMAIL_AUTH` | 是 | X-API-Key |
+
+</details>
+
+<details>
+<summary><b>OutlookEmailPlus</b></summary>
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `OUTLOOKEMAILPLUS_BASE_URL` | 是 | OutlookEmailPlus 服务地址 |
+| `OUTLOOKEMAILPLUS_AUTH` | 是 | External API Key（`X-API-Key`） |
+| `OUTLOOKEMAILPLUS_PROVIDER` | 否 | 邮箱池 provider，默认 `outlook` |
+| `OUTLOOKEMAILPLUS_CALLER_ID` | 否 | 邮箱池 caller_id，默认 `everymail` |
+| `OUTLOOKEMAILPLUS_PROJECT_KEY` | 否 | 邮箱池 project_key，用于项目隔离/复用 |
+
+> 目标项目：[ZeroPointSix/outlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus)，使用 `/api/external/*` 受控接口。
 
 </details>
 
@@ -380,6 +397,22 @@ Cloudflare Pages + D1，X-API-Key 认证：
 
 </details>
 
+<details>
+<summary><b>OutlookEmailPlus 映射</b></summary>
+
+通过受控 External API 读取邮件，创建邮箱映射为邮箱池领取：
+
+| everyMail 语义 | OutlookEmailPlus 接口 | 说明 |
+|---|---|---|
+| 创建邮箱 | `POST /api/external/pool/claim-random` | 返回邮箱与 claim_token |
+| 登录邮箱 | 本地状态包装 | 按 email 调用读信接口 |
+| 邮件列表 | `GET /api/external/messages` | 使用 `email`、`skip`、`top` 查询 |
+| 邮件详情 | `GET /api/external/messages/:id` | 使用 `email` 查询参数 |
+| 删除邮件 | 不支持 | 返回成功以保持兼容 |
+| 删除邮箱 | `POST /api/external/pool/claim-release` | 仅释放本适配器领取的邮箱 |
+
+</details>
+
 ## 架构设计
 
 ```mermaid
@@ -400,10 +433,11 @@ graph TB
         B4[InbucketAdapter]
         B5[MailpitAdapter]
         B6[MoemailAdapter]
+        B7[OutlookEmailPlusAdapter]
     end
 
     F1 & F2 & F3 & F4 & F5 & F6 --> Router{路由分发}
-    Router --> B1 & B2 & B3 & B4 & B5 & B6
+    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7
 ```
 
 - **添加新前端格式**：实现 `FrontendFormat` 接口，一个文件搞定
@@ -417,14 +451,15 @@ src/
 ├── index.ts              # 入口 - 注册表循环挂载
 ├── config.ts             # 配置管理
 ├── types/                # API 类型定义
-├── adapters/             # 后端适配器（6 个）
+├── adapters/             # 后端适配器（7 个）
 │   ├── base.ts           # BackendAdapter 接口
 │   ├── cloudflare.ts
 │   ├── cloudmail.ts
 │   ├── shiromail.ts
 │   ├── inbucket.ts
 │   ├── mailpit.ts
-│   └── moemail.ts
+│   ├── moemail.ts
+│   └── outlookemailplus.ts
 ├── frontend/             # 前端格式（6 个）
 │   ├── types.ts          # FrontendFormat 接口
 │   ├── index.ts          # 格式注册表
