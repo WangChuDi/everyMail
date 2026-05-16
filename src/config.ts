@@ -179,7 +179,7 @@ export function loadConfig(): AppConfig {
     outlookEmailPlusProvider: getEnv('OUTLOOKEMAILPLUS_PROVIDER', 'outlook'),
     outlookEmailPlusCallerId: getEnv('OUTLOOKEMAILPLUS_CALLER_ID', 'everymail'),
     outlookEmailPlusProjectKey: getEnv('OUTLOOKEMAILPLUS_PROJECT_KEY', ''),
-    outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', '') || getEnv('OUTLOOKEMAILPLUS_AUTH', ''),
+    outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', getEnv('OUTLOOKEMAILPLUS_AUTH', '')),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 
