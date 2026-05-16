@@ -5,6 +5,7 @@ import { CloudflareAdapter } from './cloudflare.js';
 import { InbucketAdapter } from './inbucket.js';
 import { MailpitAdapter } from './mailpit.js';
 import { MoemailAdapter } from './moemail.js';
+import { OutlookEmailPlusAdapter } from './outlookemailplus.js';
 import { ShiroMailAdapter } from './shiromail.js';
 
 export function createBackendAdapter(): BackendAdapter {
@@ -21,6 +22,8 @@ export function createBackendAdapter(): BackendAdapter {
       return new MailpitAdapter();
     case 'moemail':
       return new MoemailAdapter();
+    case 'outlookemailplus':
+      return new OutlookEmailPlusAdapter();
     default: {
       const exhaustive: never = config.mailBackend;
       throw new Error(`Unsupported mail backend: ${exhaustive}`);
