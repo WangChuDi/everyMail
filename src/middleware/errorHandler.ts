@@ -9,6 +9,10 @@ interface AdapterError extends Error {
 function serializeError(req: Request, statusCode: number, message: string): unknown {
   const path = req.originalUrl || req.path;
 
+  if (path.startsWith('/outlookemailplus')) {
+    return { success: false, code: toOutlookEmailPlusCode(statusCode), message, data: null };
+  }
+
   if (path.startsWith('/shiromail')) {
     return wrapError(message, statusCode);
   }
@@ -18,6 +22,15 @@ function serializeError(req: Request, statusCode: number, message: string): unkn
   }
 
   return { error: message };
+}
+
+function toOutlookEmailPlusCode(statusCode: number): string {
+  if (statusCode === 400) return 'INVALID_PARAM';
+  if (statusCode === 401) return 'UNAUTHORIZED';
+  if (statusCode === 403) return 'FORBIDDEN';
+  if (statusCode === 404) return 'MAIL_NOT_FOUND';
+  if (statusCode === 429) return 'RATE_LIMIT_EXCEEDED';
+  return 'INTERNAL_ERROR';
 }
 
 export function errorHandler(

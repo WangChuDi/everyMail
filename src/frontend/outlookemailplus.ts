@@ -20,7 +20,7 @@ interface ClaimRandomBody {
 }
 
 interface ClaimReleaseBody {
-  claim_token?: string;
+  claim_token?: unknown;
 }
 
 interface MessageQuery {
@@ -89,12 +89,15 @@ export class OutlookEmailPlusFormat implements FrontendFormat {
 
     router.post('/api/external/pool/claim-release', async (req: Request<{}, unknown, ClaimReleaseBody>, res: Response, next: NextFunction) => {
       try {
-        if (!req.body.claim_token) {
+        const claimToken = typeof req.body.claim_token === 'string'
+          ? req.body.claim_token.trim()
+          : '';
+        if (!claimToken) {
           res.status(400).json(wrapError('INVALID_PARAM', 'claim_token is required'));
           return;
         }
 
-        await adapter.deleteAddress(req.body.claim_token);
+        await adapter.deleteAddress(claimToken);
         res.json(wrapOk({ released: true }));
       } catch (error) {
         next(error);
