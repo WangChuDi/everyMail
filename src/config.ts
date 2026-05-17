@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'icloud_hide_my_email' | 'mailpit' | 'moemail' | 'outlookemailplus';
+export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'icloud_hide_my_email' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925';
 export type ICloudWebHost = 'icloud.com' | 'icloud.com.cn';
 export type ICloudHmeReadBackend = Exclude<MailBackend, 'icloud_hide_my_email'> | 'icloud_web';
 
@@ -112,6 +112,13 @@ export interface AppConfig {
   /** OutlookEmailPlus frontend API key */
   outlookEmailPlusFrontendAuth: string;
 
+  // ===== 2925 侧 =====
+
+  /** 2925.com cookie（用于获取 token） */
+  mail2925Cookie: string;
+  /** 2925.com 域名（用于合成邮箱地址） */
+  mail2925Domain: string;
+
   // ===== 内部 =====
 
   /** 本地 JWT 签名密钥 */
@@ -176,7 +183,7 @@ function normalizeHttpsUrl(raw: string, envKey: string): string {
 }
 
 const VALID_BACKENDS: readonly MailBackend[] = [
-  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'icloud_hide_my_email', 'mailpit', 'moemail', 'outlookemailplus',
+  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'icloud_hide_my_email', 'mailpit', 'moemail', 'outlookemailplus', '2925',
 ];
 
 function parseMailBackend(raw: string): MailBackend {
@@ -307,6 +314,9 @@ export function loadConfig(): AppConfig {
     outlookEmailPlusCallerId: getEnv('OUTLOOKEMAILPLUS_CALLER_ID', 'everymail'),
     outlookEmailPlusProjectKey: getEnv('OUTLOOKEMAILPLUS_PROJECT_KEY', ''),
     outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', getEnv('OUTLOOKEMAILPLUS_AUTH', '')),
+
+    mail2925Cookie: getEnv('MAIL_2925_COOKIE', ''),
+    mail2925Domain: getEnv('MAIL_2925_DOMAIN', '2925.com'),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 
