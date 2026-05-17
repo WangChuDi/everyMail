@@ -44,6 +44,7 @@ interface StoredSession {
 const TOKEN_PREFIX = 'smtpimap.v1.';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_SESSION_COUNT = 1000;
+const TOKEN_KEY_CONTEXT = 'everyMail:smtp-imap-token:v1';
 const sessionStore = new Map<string, StoredSession>();
 
 export class SmtpImapAdapter implements BackendAdapter {
@@ -189,8 +190,10 @@ export class SmtpImapAdapter implements BackendAdapter {
     return this.withClient(session, true, async client => {
       const query = buildSearchQuery(session.address);
       const uids = await client.search(query, { uid: true });
-      const allUids = uids ? [...uids].sort((a, b) => b - a) : [];
-      const selectedUids = allUids.slice(offset, offset + limit);
+      const allUids = Array.isArray(uids) ? uids : [];
+      const pageEnd = Math.max(allUids.length - offset, 0);
+      const pageStart = Math.max(pageEnd - limit, 0);
+      const selectedUids = allUids.slice(pageStart, pageEnd).reverse();
       const items: FetchMessageObject[] = [];
 
       if (selectedUids.length > 0) {
@@ -268,10 +271,8 @@ export class SmtpImapAdapter implements BackendAdapter {
       if (client.usable || client.authenticated) {
         try {
           await client.logout();
-        } catch (err) {
-          if (!(err instanceof Error)) {
-            throw err;
-          }
+        } catch {
+          // Cleanup failures must not mask the original IMAP operation result.
         }
       }
     }
@@ -524,7 +525,7 @@ function toNumericId(value: string): number {
 }
 
 function deriveTokenKey(): Buffer {
-  return createHash('sha256').update(config.jwtSecret).digest();
+  return createHash('sha256').update(TOKEN_KEY_CONTEXT).update(config.jwtSecret).digest();
 }
 
 function base64Url(value: Buffer): string {
