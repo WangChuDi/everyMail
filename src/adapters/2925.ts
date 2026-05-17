@@ -61,7 +61,9 @@ export class Mail2925Adapter implements BackendAdapter {
   constructor(cookie?: string, domain?: string) {
     this.cookie = cookie ?? config.mail2925Cookie;
     this.domain = domain ?? config.mail2925Domain;
+  }
 
+  private assertConfigured(): void {
     if (!this.cookie) {
       throw new Mail2925AdapterError('MAIL_2925_COOKIE is required when MAIL_BACKEND=2925', 500);
     }
@@ -118,10 +120,11 @@ export class Mail2925Adapter implements BackendAdapter {
   }
 
   private async ensureToken(): Promise<void> {
+    this.assertConfigured();
     if (!this.token) {
       const ok = await this.refreshToken();
       if (!ok) {
-        throw new Mail2925AdapterError('Failed to obtain token from 2925', 401);
+        throw new Mail2925AdapterError('Failed to obtain token from 2925 (cookie may be expired)', 401);
       }
     }
   }
@@ -130,13 +133,8 @@ export class Mail2925Adapter implements BackendAdapter {
     const resp = await fetch(url, init);
 
     const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Mail2925AdapterError(`2925 API returned non-JSON response (${resp.status})`, resp.status);
-    }
 
-    const data = await resp.json() as Record<string, unknown>;
-
-    if (data.status_code === 401 || resp.status === 401) {
+    if (resp.status === 401 || (!resp.ok && !contentType.includes('application/json'))) {
       const refreshed = await this.refreshToken();
       if (!refreshed) {
         throw new Mail2925AdapterError('Cookie expired, cannot refresh token', 401);
@@ -153,6 +151,25 @@ export class Mail2925Adapter implements BackendAdapter {
         throw new Mail2925AdapterError(`2925 API error after retry: ${retryResp.status}`, retryResp.status);
       }
 
+      return (await retryResp.json()) as T;
+    }
+
+    if (!contentType.includes('application/json')) {
+      throw new Mail2925AdapterError(`2925 API returned non-JSON response (${resp.status})`, resp.status);
+    }
+
+    const data = await resp.json() as Record<string, unknown>;
+
+    if (data.status_code === 401) {
+      const refreshed = await this.refreshToken();
+      if (!refreshed) {
+        throw new Mail2925AdapterError('Cookie expired, cannot refresh token', 401);
+      }
+      const retryInit: RequestInit = { ...init, headers: this.buildHeaders(true) };
+      const retryResp = await fetch(url, retryInit);
+      if (!retryResp.ok) {
+        throw new Mail2925AdapterError(`2925 API error after retry: ${retryResp.status}`, retryResp.status);
+      }
       return (await retryResp.json()) as T;
     }
 
@@ -191,6 +208,31 @@ export class Mail2925Adapter implements BackendAdapter {
       return data.result;
     }
     return null;
+  }
+
+  private async collectFilteredMails(address: string, limit: number, offset: number): Promise<{ items: Mail2925ListItem[]; total: number }> {
+    const normalizedAddr = this.normalizeAddress(address);
+    const collected: Mail2925ListItem[] = [];
+    let pageIndex = 1;
+
+    while (collected.length < offset + limit) {
+      const pageMails = await this.fetchPage(pageIndex);
+      if (pageMails.length === 0) break;
+
+      for (const mail of pageMails) {
+        if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === normalizedAddr)) {
+          collected.push(mail);
+        }
+      }
+
+      if (pageMails.length < PAGE_SIZE) break;
+      pageIndex += 1;
+    }
+
+    return {
+      items: collected.slice(offset, offset + limit),
+      total: collected.length,
+    };
   }
 
   private cacheMessageId(messageId: string): number {
@@ -283,7 +325,7 @@ export class Mail2925Adapter implements BackendAdapter {
     };
   }
 
-  async loginAddress(address: string): Promise<{ jwt: string }> {
+  async loginAddress(address: string, _password?: string): Promise<{ jwt: string }> {
     return { jwt: address };
   }
 
@@ -299,61 +341,27 @@ export class Mail2925Adapter implements BackendAdapter {
   }
 
   async listMails(jwt: string, limit = 20, offset = 0): Promise<CfMailListResponse> {
-    const address = this.normalizeAddress(jwt);
-    const collected: Mail2925ListItem[] = [];
-    let pageIndex = 1;
-
-    while (collected.length < offset + limit) {
-      const pageMails = await this.fetchPage(pageIndex);
-      if (pageMails.length === 0) break;
-
-      for (const mail of pageMails) {
-        if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)) {
-          collected.push(mail);
-        }
-      }
-
-      if (pageMails.length < PAGE_SIZE) break;
-      pageIndex += 1;
-    }
-
-    const sliced = collected.slice(offset, offset + limit);
-
+    const { items, total } = await this.collectFilteredMails(jwt, limit, offset);
     return {
-      results: sliced.map(mail => this.toRawMail(mail)),
-      count: collected.length,
+      results: items.map(mail => this.toRawMail(mail)),
+      count: total,
     };
   }
 
   async listParsedMails(jwt: string, limit = 20, offset = 0): Promise<CfParsedMailListResponse> {
-    const address = this.normalizeAddress(jwt);
-    const collected: Mail2925ListItem[] = [];
-    let pageIndex = 1;
-
-    while (collected.length < offset + limit) {
-      const pageMails = await this.fetchPage(pageIndex);
-      if (pageMails.length === 0) break;
-
-      for (const mail of pageMails) {
-        if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)) {
-          collected.push(mail);
-        }
-      }
-
-      if (pageMails.length < PAGE_SIZE) break;
-      pageIndex += 1;
-    }
-
-    const sliced = collected.slice(offset, offset + limit);
-
+    const { items, total } = await this.collectFilteredMails(jwt, limit, offset);
     return {
-      results: sliced.map(mail => this.toParsedMail(mail)),
-      count: collected.length,
+      results: items.map(mail => this.toParsedMail(mail)),
+      count: total,
     };
   }
 
   async getMail(jwt: string, mailId: string): Promise<CfRawMail | null> {
     const numericId = Number(mailId);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return null;
+    }
+
     const messageId = await this.resolveMessageId(numericId);
     if (!messageId) return null;
 
@@ -371,6 +379,10 @@ export class Mail2925Adapter implements BackendAdapter {
 
   async getParsedMail(jwt: string, mailId: string): Promise<CfParsedMail | null> {
     const numericId = Number(mailId);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return null;
+    }
+
     const messageId = await this.resolveMessageId(numericId);
     if (!messageId) return null;
 
@@ -453,8 +465,9 @@ function parseTimestamp(timestamp: string | undefined): string {
 
   const num = Number(timestamp);
   if (!Number.isNaN(num) && num > 0) {
+    const ms = num < 1e12 ? num * 1000 : num;
     try {
-      return new Date(num).toISOString();
+      return new Date(ms).toISOString();
     } catch {
       return new Date().toISOString();
     }
