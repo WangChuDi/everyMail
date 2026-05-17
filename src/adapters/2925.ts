@@ -72,7 +72,6 @@ export class Mail2925Adapter implements BackendAdapter {
   private buildHeaders(withAuth: boolean): Record<string, string> {
     const headers: Record<string, string> = {
       ...DEFAULT_HEADERS,
-      'Host': 'www.2925.com',
       'Cookie': this.cookie,
     };
     if (withAuth && this.token) {
@@ -167,6 +166,12 @@ export class Mail2925Adapter implements BackendAdapter {
       }
       const retryInit: RequestInit = { ...init, headers: this.buildHeaders(true) };
       const retryResp = await fetch(url, retryInit);
+
+      const retryContentType2 = retryResp.headers.get('content-type') || '';
+      if (!retryContentType2.includes('application/json')) {
+        throw new Mail2925AdapterError(`2925 API returned non-JSON after retry (${retryResp.status})`, retryResp.status);
+      }
+
       if (!retryResp.ok) {
         throw new Mail2925AdapterError(`2925 API error after retry: ${retryResp.status}`, retryResp.status);
       }
@@ -214,14 +219,16 @@ export class Mail2925Adapter implements BackendAdapter {
     const normalizedAddr = this.normalizeAddress(address);
     const collected: Mail2925ListItem[] = [];
     let pageIndex = 1;
+    const maxPages = 10;
 
-    while (collected.length < offset + limit) {
+    while (collected.length < offset + limit && pageIndex <= maxPages) {
       const pageMails = await this.fetchPage(pageIndex);
       if (pageMails.length === 0) break;
 
       for (const mail of pageMails) {
         if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === normalizedAddr)) {
           collected.push(mail);
+          if (collected.length >= offset + limit) break;
         }
       }
 
@@ -368,6 +375,10 @@ export class Mail2925Adapter implements BackendAdapter {
     const detail = await this.readMail(messageId);
     if (!detail) return null;
 
+    if (detail.toAddress && !detail.toAddress.some(to => this.normalizeAddress(to) === this.normalizeAddress(jwt))) {
+      return null;
+    }
+
     return {
       id: numericId,
       source: detail.fromAddress ?? '',
@@ -388,6 +399,10 @@ export class Mail2925Adapter implements BackendAdapter {
 
     const detail = await this.readMail(messageId);
     if (!detail) return null;
+
+    if (detail.toAddress && !detail.toAddress.some(to => this.normalizeAddress(to) === this.normalizeAddress(jwt))) {
+      return null;
+    }
 
     return {
       id: numericId,
@@ -465,7 +480,7 @@ function parseTimestamp(timestamp: string | undefined): string {
 
   const num = Number(timestamp);
   if (!Number.isNaN(num) && num > 0) {
-    const ms = num < 1e12 ? num * 1000 : num;
+    const ms = num < 1e10 ? num * 1000 : num;
     try {
       return new Date(ms).toISOString();
     } catch {
