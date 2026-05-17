@@ -3,6 +3,7 @@ import type { BackendAdapter } from './base.js';
 import { CloudMailAdapter } from './cloudmail.js';
 import { CloudflareAdapter } from './cloudflare.js';
 import { InbucketAdapter } from './inbucket.js';
+import { Mail2925Adapter } from './2925.js';
 import { MailpitAdapter } from './mailpit.js';
 import { MoemailAdapter } from './moemail.js';
 import { OutlookEmailPlusAdapter } from './outlookemailplus.js';
@@ -27,6 +28,8 @@ export function createBackendAdapter(): BackendAdapter {
       return new OutlookEmailPlusAdapter();
     case 'smtp_imap':
       return new SmtpImapAdapter();
+    case '2925':
+      return new Mail2925Adapter();
     default: {
       const exhaustive: never = config.mailBackend;
       throw new Error(`Unsupported mail backend: ${exhaustive}`);

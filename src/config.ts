@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus' | 'smtp_imap';
+export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925' | 'smtp_imap';
 
 export interface AppConfig {
   /** 监听地址 */
@@ -81,6 +81,13 @@ export interface AppConfig {
   /** OutlookEmailPlus frontend API key */
   outlookEmailPlusFrontendAuth: string;
 
+  // ===== 2925 侧 =====
+
+  /** 2925.com cookie（用于获取 token） */
+  mail2925Cookie: string;
+  /** 2925.com 域名（用于合成邮箱地址） */
+  mail2925Domain: string;
+
   // ===== SMTP/IMAP 侧 =====
 
   /** IMAP server host */
@@ -154,7 +161,7 @@ function parsePort(raw: string, key: string): number {
 }
 
 const VALID_BACKENDS: readonly MailBackend[] = [
-  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', 'smtp_imap',
+  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', '2925', 'smtp_imap',
 ];
 
 function parseMailBackend(raw: string): MailBackend {
@@ -219,6 +226,9 @@ export function loadConfig(): AppConfig {
     outlookEmailPlusCallerId: getEnv('OUTLOOKEMAILPLUS_CALLER_ID', 'everymail'),
     outlookEmailPlusProjectKey: getEnv('OUTLOOKEMAILPLUS_PROJECT_KEY', ''),
     outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', getEnv('OUTLOOKEMAILPLUS_AUTH', '')),
+
+    mail2925Cookie: getEnv('MAIL_2925_COOKIE', ''),
+    mail2925Domain: getEnv('MAIL_2925_DOMAIN', '2925.com'),
 
     smtpImapImapHost: getEnv('SMTP_IMAP_IMAP_HOST', ''),
     smtpImapImapPort: parsePort(getEnv('SMTP_IMAP_IMAP_PORT', '993'), 'SMTP_IMAP_IMAP_PORT'),
