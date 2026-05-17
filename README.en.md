@@ -32,11 +32,13 @@ graph LR
         L[Mailpit]
         M[moemail]
         N[OutlookEmailPlus]
-        P[SMTP/IMAP]
+        P[iCloud Hide My Email]
+        Q[2925]
+        R[SMTP/IMAP]
     end
 
     A & B & C & D & E & F & O -->|Native API| G
-    G -->|Adapter| H & I & J & K & L & M & N & P
+    G -->|Adapter| H & I & J & K & L & M & N & P & Q & R
 ```
 
 ## Table of Contents
@@ -53,7 +55,7 @@ graph LR
 
 ## Features
 
-- **N×M Matrix** — 7 frontend formats × 8 backends, any combination
+- **N×M Matrix** — 7 frontend formats × 10 backends, any combination
 - **Zero-modification access** — Frontend clients connect directly without changes
 - **One-switch backend migration** — Change `MAIL_BACKEND` to switch
 - **Docker one-liner** — Pre-built multi-arch images (amd64/arm64)
@@ -72,6 +74,8 @@ graph LR
 | `mailpit` | [Mailpit](https://github.com/axllent/mailpit) | Global inbox mode |
 | `moemail` | [moemail](https://github.com/beilunyang/moemail) | Cloudflare Pages + D1 |
 | `outlookemailplus` | [OutlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus) | Controlled External API + mail pool |
+| `icloud_hide_my_email` | [Hide My Email Generator](https://github.com/rtunazzz/hidemyemail-generator) | iCloud forwarding aliases, creation/settings only |
+| `2925` | 2925.com | Shared inbox model using Cookie-based API token retrieval |
 | `smtp_imap` | Standard SMTP/IMAP service | Read/delete mail over IMAP and expose SMTP/IMAP connection settings |
 
 ### Frontend Formats (`ENABLED_FRONTENDS`)
@@ -224,6 +228,39 @@ Configuration used when clients connect to the `/shiromail` route:
 </details>
 
 <details>
+<summary><b>icloud_hide_my_email</b></summary>
+
+| Variable | Required | Notes |
+|---|---|---|
+| `ICLOUD_HME_BASE_URL` | No | Apple iCloud Hide My Email private API URL, defaults to `https://p68-maildomainws.icloud.com`; HTTPS is required |
+| `ICLOUD_HME_COOKIE` | Yes | Raw `Cookie` header string copied from an authenticated iCloud.com browser session |
+| `ICLOUD_HME_CLIENT_ID` | No | Shared query parameter `clientId`, defaults to empty string |
+| `ICLOUD_HME_DSID` | No | Shared query parameter `dsid`, defaults to empty string |
+| `ICLOUD_HME_DEFAULT_LABEL` | No | Default alias label when create requests do not provide `name`, defaults to `everyMail` |
+| `ICLOUD_HME_DEFAULT_NOTE` | No | Optional note sent in reserve requests, defaults to empty string |
+| `ICLOUD_HME_REUSE_API_KEY` | No | API key protecting `/icloud-hme/aliases` and `/icloud-hme/reuse`; when empty these helper routes return 403 |
+| `ICLOUD_HME_READ_BACKEND` | No | Optional read backend, e.g. `cloudflare_temp_email`; set `icloud_web` to read through iCloud Web Mail; empty keeps message lists empty and message details `null` |
+| `ICLOUD_WEB_HOST` | No | iCloud Web host used for `icloud_web` Origin/Referer and default mailws URL; use `icloud.com` or `icloud.com.cn`, default `icloud.com` |
+| `ICLOUD_MAIL_BASE_URL` | No | iCloud Mail WebService URL; when empty, `icloud.com` defaults to `https://p44-mailws.icloud.com` and `icloud.com.cn` defaults to `https://p44-mailws.icloud.com.cn` |
+| `ICLOUD_MAIL_FOLDER_GUID` | No | Fixed iCloud Mail folder GUID to read; empty auto-detects Inbox |
+| `ICLOUD_MAIL_CLIENT_BUILD_NUMBER` | No | iCloud Mail WebService `clientBuildNumber`, default `2206Hotfix11` |
+| `ICLOUD_MAIL_CLIENT_MASTERING_NUMBER` | No | iCloud Mail WebService `clientMasteringNumber`, defaults to `ICLOUD_MAIL_CLIENT_BUILD_NUMBER` |
+
+> Reference implementation: [rtunazzz/hidemyemail-generator](https://github.com/rtunazzz/hidemyemail-generator). Authentication is not Apple ID/password login; everyMail reuses the full Cookie request header from an already-authenticated iCloud.com browser session.
+
+> Security note: this Cookie is equivalent to an authenticated iCloud Web session and may grant access beyond Hide My Email. Use a dedicated Apple ID in a controlled environment; export a fresh Cookie when the session expires.
+
+> Limitation: the Hide My Email API itself only manages forwarding aliases and does not expose mailbox retrieval. Without `ICLOUD_HME_READ_BACKEND`, message list methods return empty arrays, single-message lookups return `null`, and delete/clear message operations plus address deletion are compatibility no-ops.
+
+> Read delegation: if your Hide My Email aliases forward into another everyMail-supported receiving backend, set `ICLOUD_HME_READ_BACKEND=cloudflare_temp_email` or another backend value. iCloud HME still owns alias creation/reuse; message lists and message detail calls log in to the read backend with the same address and delegate reads there. Delete message, purge inbox, and delete address remain no-ops to avoid deleting real data from the receiving backend unexpectedly.
+
+> iCloud Web Mail reads: set `ICLOUD_HME_READ_BACKEND=icloud_web` to have everyMail call iCloud Mail WebService `/wm/folder` and `/wm/message` JSON-RPC endpoints with the same iCloud Cookie. This follows FlowPilot's iCloud host handling and browser request-header rules; FlowPilot reads through browser DOM polling, while everyMail uses the server-side WebService shape. For China-region accounts, set `ICLOUD_WEB_HOST=icloud.com.cn`; the default mailws URL becomes `https://p44-mailws.icloud.com.cn` and everyMail sends `https://www.icloud.com.cn` Origin/Referer.
+
+> Reuse: existing login routes such as `/cftempmail/api/address_login` and `/shiromail/auth/login` verify that the address belongs to the configured iCloud session and is active. To let a frontend choose from existing aliases, set `ICLOUD_HME_REUSE_API_KEY` and call `/icloud-hme/aliases`.
+
+</details>
+
+<details>
 <summary><b>OutlookEmailPlus</b></summary>
 
 | Variable | Required | Notes |
@@ -353,6 +390,18 @@ Each frontend format exposes the native API of its corresponding project. All re
 
 </details>
 
+<details>
+<summary><b>iCloud HME Reuse Helper (/icloud-hme)</b></summary>
+
+These routes are mounted only when `MAIL_BACKEND=icloud_hide_my_email`, and require `X-API-Key: <ICLOUD_HME_REUSE_API_KEY>` or `Authorization: Bearer <ICLOUD_HME_REUSE_API_KEY>`.
+
+| Route | Method | Notes |
+|---|---|---|
+| `/icloud-hme/aliases` | GET | List active Hide My Email aliases that belong to the configured iCloud Cookie session |
+| `/icloud-hme/reuse` | POST | Send `{ "address": "..." }`; returns an everyMail JWT after ownership validation |
+
+</details>
+
 ## Backend Mapping Notes
 
 Each backend has a different API model. everyMail unifies them through the `BackendAdapter` interface.
@@ -453,6 +502,24 @@ Uses the controlled External API for mail reading; mailbox creation maps to mail
 </details>
 
 <details>
+<summary><b>iCloud Hide My Email Mapping</b></summary>
+
+Backed by the Apple iCloud web private API for Hide My Email alias management:
+
+| everyMail Semantic | iCloud HME API | Notes |
+|---|---|---|
+| Create mailbox | `POST /v1/hme/generate` -> `POST /v1/hme/reserve` | Generate alias first, then reserve it with `label`/`note` |
+| Login | `GET /v2/hme/list` + local state wrapper | Validates that the existing alias belongs to the configured iCloud Cookie session and is active before issuing a local JWT |
+| List reusable mailboxes | `GET /v2/hme/list` | Exposed through `/icloud-hme/aliases`, protected by `ICLOUD_HME_REUSE_API_KEY` |
+| Settings | Local JWT payload | Returns the address and compatible fields |
+| Delete mailbox | Not supported | No verified safe delete/deactivate endpoint in scope, returns success no-op |
+| Message list | Optional `ICLOUD_HME_READ_BACKEND` | Empty value returns an empty list; another backend logs in to the receiving backend with the same address; `icloud_web` reads the iCloud Web Mail inbox |
+| Message detail | Optional `ICLOUD_HME_READ_BACKEND` | Empty value returns `null`; another backend delegates reads; `icloud_web` reads through iCloud Mail WebService |
+| Delete message / purge inbox | Not supported | Return success no-op |
+
+</details>
+
+<details>
 <summary><b>SMTP/IMAP Mapping</b></summary>
 
 Standard SMTP/IMAP services do not expose a common account-creation REST API, so this adapter projects an IMAP inbox into the everyMail backend model:
@@ -492,11 +559,13 @@ graph TB
         B5[MailpitAdapter]
         B6[MoemailAdapter]
         B7[OutlookEmailPlusAdapter]
-        B8[SmtpImapAdapter]
+        B8[ICloudHideMyEmailAdapter]
+        B9[Mail2925Adapter]
+        B10[SmtpImapAdapter]
     end
 
     F1 & F2 & F3 & F4 & F5 & F6 & F7 --> Router{Router}
-    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8
+    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 & B9 & B10
 ```
 
 - **Add a new frontend format**: implement the `FrontendFormat` interface, one file
@@ -510,7 +579,7 @@ src/
 ├── index.ts              # Entry point, registry loop mounting
 ├── config.ts             # Configuration management
 ├── types/                # API type definitions
-├── adapters/             # Backend adapters (8)
+├── adapters/             # Backend adapters (10)
 │   ├── base.ts           # BackendAdapter interface
 │   ├── cloudflare.ts
 │   ├── cloudmail.ts
@@ -519,6 +588,8 @@ src/
 │   ├── mailpit.ts
 │   ├── moemail.ts
 │   ├── outlookemailplus.ts
+│   ├── icloudhidemyemail.ts
+│   ├── 2925.ts
 │   └── smtpimap.ts
 ├── frontend/             # Frontend formats (7)
 │   ├── types.ts          # FrontendFormat interface

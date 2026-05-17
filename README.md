@@ -32,11 +32,13 @@ graph LR
         L[Mailpit]
         M[moemail]
         N[OutlookEmailPlus]
-        P[SMTP/IMAP]
+        P[iCloud Hide My Email]
+        Q[2925]
+        R[SMTP/IMAP]
     end
 
     A & B & C & D & E & F & O -->|原生 API| G
-    G -->|适配器转换| H & I & J & K & L & M & N & P
+    G -->|适配器转换| H & I & J & K & L & M & N & P & Q & R
 ```
 
 ## 目录
@@ -53,7 +55,7 @@ graph LR
 
 ## 特性
 
-- **N×M 矩阵** — 7 种前端格式 × 8 种后端，任意组合
+- **N×M 矩阵** — 7 种前端格式 × 10 种后端，任意组合
 - **零改造接入** — 前端客户端无需修改，直接对接 everyMail
 - **一键切换后端** — 修改 `MAIL_BACKEND` 即可迁移
 - **Docker 一行启动** — 预构建多架构镜像（amd64/arm64）
@@ -72,6 +74,8 @@ graph LR
 | `mailpit` | [Mailpit](https://github.com/axllent/mailpit) | 全局收件箱模式 |
 | `moemail` | [moemail](https://github.com/beilunyang/moemail) | Cloudflare Pages + D1 |
 | `outlookemailplus` | [OutlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus) | 受控 External API + 邮箱池 |
+| `icloud_hide_my_email` | [Hide My Email Generator](https://github.com/rtunazzz/hidemyemail-generator) | iCloud 转发别名，仅创建/保留设置 |
+| `2925` | 2925.com | 共享收件箱模型，使用 Cookie 获取 API token |
 | `smtp_imap` | 标准 SMTP/IMAP 服务 | 通过 IMAP 读/删信，暴露 SMTP/IMAP 连接参数 |
 
 ### 前端格式（`ENABLED_FRONTENDS`）
@@ -224,6 +228,39 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 </details>
 
 <details>
+<summary><b>icloud_hide_my_email</b></summary>
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `ICLOUD_HME_BASE_URL` | 否 | Apple iCloud Hide My Email 私有接口地址，默认 `https://p68-maildomainws.icloud.com`，必须使用 HTTPS |
+| `ICLOUD_HME_COOKIE` | 是 | 从浏览器 iCloud.com 会话复制的原始 `Cookie` 请求头字符串 |
+| `ICLOUD_HME_CLIENT_ID` | 否 | 共享查询参数 `clientId`，默认空字符串 |
+| `ICLOUD_HME_DSID` | 否 | 共享查询参数 `dsid`，默认空字符串 |
+| `ICLOUD_HME_DEFAULT_LABEL` | 否 | 创建别名时的默认标签，默认 `everyMail` |
+| `ICLOUD_HME_DEFAULT_NOTE` | 否 | reserve 请求附带备注，默认空字符串 |
+| `ICLOUD_HME_REUSE_API_KEY` | 否 | 保护 `/icloud-hme/aliases` 与 `/icloud-hme/reuse` 的访问密钥；留空时这两个专用接口会返回 403 |
+| `ICLOUD_HME_READ_BACKEND` | 否 | 可选读信后端，如 `cloudflare_temp_email`；设为 `icloud_web` 则通过 iCloud Web Mail 读件；留空则读信接口保持空列表/`null` |
+| `ICLOUD_WEB_HOST` | 否 | iCloud Web host，用于 `icloud_web` 模式的 Origin/Referer 与默认 mailws 地址；可选 `icloud.com` 或 `icloud.com.cn`，默认 `icloud.com` |
+| `ICLOUD_MAIL_BASE_URL` | 否 | iCloud Mail WebService 地址；留空时 `icloud.com` 默认 `https://p44-mailws.icloud.com`，`icloud.com.cn` 默认 `https://p44-mailws.icloud.com.cn` |
+| `ICLOUD_MAIL_FOLDER_GUID` | 否 | 固定读取的 iCloud Mail 文件夹 GUID；留空则自动查找 Inbox |
+| `ICLOUD_MAIL_CLIENT_BUILD_NUMBER` | 否 | iCloud Mail WebService `clientBuildNumber`，默认 `2206Hotfix11` |
+| `ICLOUD_MAIL_CLIENT_MASTERING_NUMBER` | 否 | iCloud Mail WebService `clientMasteringNumber`，默认同 `ICLOUD_MAIL_CLIENT_BUILD_NUMBER` |
+
+> 参考实现：[rtunazzz/hidemyemail-generator](https://github.com/rtunazzz/hidemyemail-generator)。认证方式不是 Apple ID/密码，而是直接复用已登录 iCloud.com 浏览器会话中的完整 Cookie 请求头。
+
+> 安全提示：该 Cookie 等同于已登录 iCloud Web 会话，权限可能不限于 Hide My Email。建议只在受控环境中使用独立 Apple ID；Cookie 过期后需要重新导出。
+
+> 限制：Hide My Email 接口本身只管理转发别名，不提供邮件收取/读取能力。未配置 `ICLOUD_HME_READ_BACKEND` 时，邮件列表接口返回空数组，单封邮件接口返回 `null`，删除/清空邮件与删除地址都实现为兼容 no-op。
+
+> 读信委托：如果 Hide My Email 别名已转发到另一个 everyMail 支持的收信后端，可设置 `ICLOUD_HME_READ_BACKEND=cloudflare_temp_email` 等值。iCloud HME 仍负责创建/复用别名；邮件列表和邮件详情会用同一地址登录该后端后读取。删除邮件、清空收件箱、删除地址仍保持 no-op，避免误删真实收件后端数据。
+
+> iCloud Web Mail 读件：可设置 `ICLOUD_HME_READ_BACKEND=icloud_web`，everyMail 会使用同一 iCloud Cookie 调用 iCloud Mail WebService 的 `/wm/folder` 与 `/wm/message` JSON-RPC 接口读取收件箱。该实现参考 FlowPilot 的 iCloud host 处理和浏览器请求头规则；FlowPilot 的实际读件是浏览器 DOM 轮询，everyMail 服务端实现使用 WebService 形式。国区账号设置 `ICLOUD_WEB_HOST=icloud.com.cn`，默认 mailws 会切换到 `https://p44-mailws.icloud.com.cn`，并发送 `https://www.icloud.com.cn` Origin/Referer。
+
+> 复用：`/cftempmail/api/address_login`、`/shiromail/auth/login` 等现有登录路径会先通过 iCloud 列表校验地址归属与 active 状态；如需让前端选择已有别名，可设置 `ICLOUD_HME_REUSE_API_KEY` 后调用 `/icloud-hme/aliases`。
+
+</details>
+
+<details>
 <summary><b>OutlookEmailPlus</b></summary>
 
 | 变量 | 必填 | 说明 |
@@ -353,6 +390,18 @@ docker run -d --name everymail -p 3100:3100 --env-file .env everymail
 
 </details>
 
+<details>
+<summary><b>iCloud HME 复用辅助接口（/icloud-hme）</b></summary>
+
+这些接口仅在 `MAIL_BACKEND=icloud_hide_my_email` 时挂载，并要求 `X-API-Key: <ICLOUD_HME_REUSE_API_KEY>` 或 `Authorization: Bearer <ICLOUD_HME_REUSE_API_KEY>`。
+
+| 路由 | 方法 | 说明 |
+|---|---|---|
+| `/icloud-hme/aliases` | GET | 列出当前 iCloud Cookie 账户下 active 的 Hide My Email 别名 |
+| `/icloud-hme/reuse` | POST | 传 `{ "address": "..." }`，校验归属后返回可用于现有前端的 everyMail JWT |
+
+</details>
+
 ## 后端映射说明
 
 各后端的 API 模型不同，everyMail 通过 `BackendAdapter` 接口统一抽象。以下是各后端的映射逻辑：
@@ -453,6 +502,24 @@ Cloudflare Pages + D1，X-API-Key 认证：
 </details>
 
 <details>
+<summary><b>iCloud Hide My Email 映射</b></summary>
+
+基于 Apple iCloud Web 私有接口创建/保留隐藏邮箱别名：
+
+| everyMail 语义 | iCloud HME 接口 | 说明 |
+|---|---|---|
+| 创建邮箱 | `POST /v1/hme/generate` -> `POST /v1/hme/reserve` | 先生成别名，再用 `label`/`note` 保留 |
+| 登录邮箱 | `GET /v2/hme/list` + 本地状态包装 | 校验已有别名属于当前 iCloud Cookie 账户且为 active 后签发本地 JWT |
+| 列出可复用邮箱 | `GET /v2/hme/list` | 通过 `/icloud-hme/aliases` 暴露 active 别名列表，需 `ICLOUD_HME_REUSE_API_KEY` |
+| 邮箱设置 | 本地 JWT 解析 | 返回地址与兼容字段 |
+| 删除邮箱 | 不支持 | 未发现已验证的安全删除/停用接口，返回成功 no-op |
+| 邮件列表 | 可选 `ICLOUD_HME_READ_BACKEND` | 留空返回空列表；配置其他后端时用同一地址登录收信后端读取；配置 `icloud_web` 时读取 iCloud Web Mail 收件箱 |
+| 邮件详情 | 可选 `ICLOUD_HME_READ_BACKEND` | 留空返回 `null`；配置其他后端时委托读取；配置 `icloud_web` 时通过 iCloud Mail WebService 读取 |
+| 删除邮件 / 清空收件箱 | 不支持 | 返回成功 no-op |
+
+</details>
+
+<details>
 <summary><b>SMTP/IMAP 映射</b></summary>
 
 标准 SMTP/IMAP 服务没有统一的账号创建 REST API，本适配器把 IMAP 收件箱投影为 everyMail 后端：
@@ -492,11 +559,13 @@ graph TB
         B5[MailpitAdapter]
         B6[MoemailAdapter]
         B7[OutlookEmailPlusAdapter]
-        B8[SmtpImapAdapter]
+        B8[ICloudHideMyEmailAdapter]
+        B9[Mail2925Adapter]
+        B10[SmtpImapAdapter]
     end
 
     F1 & F2 & F3 & F4 & F5 & F6 & F7 --> Router{路由分发}
-    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8
+    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 & B9 & B10
 ```
 
 - **添加新前端格式**：实现 `FrontendFormat` 接口，一个文件搞定
@@ -510,7 +579,7 @@ src/
 ├── index.ts              # 入口 - 注册表循环挂载
 ├── config.ts             # 配置管理
 ├── types/                # API 类型定义
-├── adapters/             # 后端适配器（8 个）
+├── adapters/             # 后端适配器（10 个）
 │   ├── base.ts           # BackendAdapter 接口
 │   ├── cloudflare.ts
 │   ├── cloudmail.ts
@@ -519,6 +588,8 @@ src/
 │   ├── mailpit.ts
 │   ├── moemail.ts
 │   ├── outlookemailplus.ts
+│   ├── icloudhidemyemail.ts
+│   ├── 2925.ts
 │   └── smtpimap.ts
 ├── frontend/             # 前端格式（7 个）
 │   ├── types.ts          # FrontendFormat 接口

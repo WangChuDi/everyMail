@@ -2,7 +2,9 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925' | 'smtp_imap';
+export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'icloud_hide_my_email' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925' | 'smtp_imap';
+export type ICloudWebHost = 'icloud.com' | 'icloud.com.cn';
+export type ICloudHmeReadBackend = Exclude<MailBackend, 'icloud_hide_my_email'> | 'icloud_web';
 
 export interface AppConfig {
   /** 监听地址 */
@@ -51,6 +53,35 @@ export interface AppConfig {
 
   /** Inbucket base URL */
   inbucketBaseUrl: string;
+
+  // ===== iCloud Hide My Email 侧 =====
+
+  /** iCloud Hide My Email private API base URL */
+  icloudHmeBaseUrl: string;
+  /** Raw exported Cookie header string from iCloud.com */
+  icloudHmeCookie: string;
+  /** Shared iCloud private API clientId query parameter */
+  icloudHmeClientId: string;
+  /** Shared iCloud private API dsid query parameter */
+  icloudHmeDsid: string;
+  /** Default label used when no create name is provided */
+  icloudHmeDefaultLabel: string;
+  /** Optional note used when reserving generated aliases */
+  icloudHmeDefaultNote: string;
+  /** API key required by iCloud HME alias listing/reuse helper routes */
+  icloudHmeReuseApiKey: string;
+  /** Optional backend used only for reading mail forwarded to iCloud HME aliases */
+  icloudHmeReadBackend: ICloudHmeReadBackend | '';
+  /** iCloud web host family used for Origin/Referer, including China region */
+  icloudWebHost: ICloudWebHost;
+  /** iCloud Mail WebService base URL for /wm/folder and /wm/message */
+  icloudMailBaseUrl: string;
+  /** Optional fixed iCloud Mail folder GUID; empty means auto-detect inbox */
+  icloudMailFolderGuid: string;
+  /** iCloud Mail WebService clientBuildNumber */
+  icloudMailClientBuildNumber: string;
+  /** iCloud Mail WebService clientMasteringNumber */
+  icloudMailClientMasteringNumber: string;
 
   // ===== Mailpit 侧 =====
 
@@ -132,6 +163,11 @@ function getEnv(key: string, fallback?: string): string {
   throw new Error(`Missing required environment variable: ${key}`);
 }
 
+function getEnvDefaultingBlank(key: string, fallback: string): string {
+  const value = getEnv(key, fallback).trim();
+  return value || fallback;
+}
+
 function parseJsonObject(raw: string): Record<string, string> {
   if (!raw || raw === '{}') return {};
   try {
@@ -140,6 +176,31 @@ function parseJsonObject(raw: string): Record<string, string> {
     console.warn(`[config] Failed to parse DOMAIN_MAP JSON: ${raw}`);
     return {};
   }
+}
+
+function normalizeHttpsUrl(raw: string, envKey: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const normalized = trimmed.replace(/\/+$/, '');
+  if (!normalized) {
+    throw new Error(`${envKey} must be a valid HTTPS URL`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error(`${envKey} must be a valid HTTPS URL`);
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`${envKey} must use https://`);
+  }
+
+  return normalized;
 }
 
 function parseBoolean(raw: string): boolean {
@@ -161,7 +222,7 @@ function parsePort(raw: string, key: string): number {
 }
 
 const VALID_BACKENDS: readonly MailBackend[] = [
-  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', '2925', 'smtp_imap',
+  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'icloud_hide_my_email', 'mailpit', 'moemail', 'outlookemailplus', '2925', 'smtp_imap',
 ];
 
 function parseMailBackend(raw: string): MailBackend {
@@ -170,6 +231,53 @@ function parseMailBackend(raw: string): MailBackend {
   }
   console.warn(`[config] Unsupported MAIL_BACKEND "${raw}", falling back to cloudflare_temp_email`);
   return 'cloudflare_temp_email';
+}
+
+function parseICloudHmeReadBackend(raw: string): ICloudHmeReadBackend | '' {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed === 'icloud_web') {
+    return 'icloud_web';
+  }
+
+  if (trimmed === 'icloud_hide_my_email') {
+    throw new Error('ICLOUD_HME_READ_BACKEND cannot be icloud_hide_my_email');
+  }
+
+  if (VALID_BACKENDS.includes(trimmed as MailBackend)) {
+    return trimmed as ICloudHmeReadBackend;
+  }
+
+  const allowed = [...VALID_BACKENDS.filter(backend => backend !== 'icloud_hide_my_email'), 'icloud_web'].join(' | ');
+  throw new Error(`ICLOUD_HME_READ_BACKEND must be one of: ${allowed}`);
+}
+
+function parseICloudWebHost(raw: string): ICloudWebHost {
+  let host = raw.trim().toLowerCase();
+  if (!host || host === 'auto') {
+    return 'icloud.com';
+  }
+
+  try {
+    if (host.includes('://')) {
+      host = new URL(host).hostname.toLowerCase();
+    }
+  } catch {
+    throw new Error('ICLOUD_WEB_HOST must be icloud.com or icloud.com.cn');
+  }
+
+  host = host.split('/')[0].split('?')[0].split('#')[0].replace(/:\d+$/, '').replace(/\.$/, '');
+  if (host === 'icloud.com' || host.endsWith('.icloud.com')) {
+    return 'icloud.com';
+  }
+  if (host === 'icloud.com.cn' || host.endsWith('.icloud.com.cn')) {
+    return 'icloud.com.cn';
+  }
+
+  throw new Error('ICLOUD_WEB_HOST must be icloud.com or icloud.com.cn');
 }
 
 const ALL_FRONTENDS = ['shiromail', 'cloudflare', 'inbucket', 'mailpit', 'moemail', 'cloudmail', 'outlookemailplus'];
@@ -192,6 +300,11 @@ function parseLogLevel(raw: string): AppConfig['logLevel'] {
 }
 
 export function loadConfig(): AppConfig {
+  const icloudWebHost = parseICloudWebHost(getEnv('ICLOUD_WEB_HOST', 'icloud.com'));
+  const defaultICloudMailBaseUrl = icloudWebHost === 'icloud.com.cn'
+    ? 'https://p44-mailws.icloud.com.cn'
+    : 'https://p44-mailws.icloud.com';
+
   const cfg: AppConfig = {
     host: getEnv('HOST', '0.0.0.0'),
     port: parseInt(getEnv('PORT', '3100'), 10),
@@ -213,6 +326,20 @@ export function loadConfig(): AppConfig {
     shiromailBackendApiKey: getEnv('SHIROMAIL_BACKEND_API_KEY', ''),
 
     inbucketBaseUrl: getEnv('INBUCKET_BASE_URL', '').replace(/\/+$/, ''),
+
+    icloudHmeBaseUrl: normalizeHttpsUrl(getEnvDefaultingBlank('ICLOUD_HME_BASE_URL', 'https://p68-maildomainws.icloud.com'), 'ICLOUD_HME_BASE_URL'),
+    icloudHmeCookie: getEnv('ICLOUD_HME_COOKIE', ''),
+    icloudHmeClientId: getEnv('ICLOUD_HME_CLIENT_ID', ''),
+    icloudHmeDsid: getEnv('ICLOUD_HME_DSID', ''),
+    icloudHmeDefaultLabel: getEnv('ICLOUD_HME_DEFAULT_LABEL', 'everyMail'),
+    icloudHmeDefaultNote: getEnv('ICLOUD_HME_DEFAULT_NOTE', ''),
+    icloudHmeReuseApiKey: getEnv('ICLOUD_HME_REUSE_API_KEY', ''),
+    icloudHmeReadBackend: parseICloudHmeReadBackend(getEnv('ICLOUD_HME_READ_BACKEND', '')),
+    icloudWebHost,
+    icloudMailBaseUrl: normalizeHttpsUrl(getEnvDefaultingBlank('ICLOUD_MAIL_BASE_URL', defaultICloudMailBaseUrl), 'ICLOUD_MAIL_BASE_URL'),
+    icloudMailFolderGuid: getEnv('ICLOUD_MAIL_FOLDER_GUID', ''),
+    icloudMailClientBuildNumber: getEnv('ICLOUD_MAIL_CLIENT_BUILD_NUMBER', '2206Hotfix11'),
+    icloudMailClientMasteringNumber: getEnv('ICLOUD_MAIL_CLIENT_MASTERING_NUMBER', getEnv('ICLOUD_MAIL_CLIENT_BUILD_NUMBER', '2206Hotfix11')),
 
     mailpitBaseUrl: getEnv('MAILPIT_BASE_URL', '').replace(/\/+$/, ''),
     mailpitAuth: getEnv('MAILPIT_AUTH', ''),
