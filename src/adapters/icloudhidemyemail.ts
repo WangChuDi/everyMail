@@ -516,7 +516,7 @@ export class ICloudHideMyEmailAdapter implements BackendAdapter {
     }
 
     if (!this.cookieHeader) {
-      throw new ICloudHideMyEmailAdapterError('ICLOUD_HME_COOKIE is required when ICLOUD_HME_READ_BACKEND=icloud_web', 401, '');
+      throw new ICloudHideMyEmailAdapterError('ICLOUD_HME_COOKIE is required when ICLOUD_HME_READ_BACKEND=icloud_web', 500, '');
     }
 
     const url = new URL(path, config.icloudMailBaseUrl);
@@ -585,7 +585,7 @@ export class ICloudHideMyEmailAdapter implements BackendAdapter {
     if (!this.cookieHeader) {
       throw new ICloudHideMyEmailAdapterError(
         'ICLOUD_HME_COOKIE is required when MAIL_BACKEND=icloud_hide_my_email',
-        401,
+        500,
         ''
       );
     }

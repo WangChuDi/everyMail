@@ -151,9 +151,14 @@ function parseJsonObject(raw: string): Record<string, string> {
 }
 
 function normalizeHttpsUrl(raw: string, envKey: string): string {
-  const normalized = raw.replace(/\/+$/, '');
-  if (!normalized) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
     return '';
+  }
+
+  const normalized = trimmed.replace(/\/+$/, '');
+  if (!normalized) {
+    throw new Error(`${envKey} must be a valid HTTPS URL`);
   }
 
   let parsed: URL;
