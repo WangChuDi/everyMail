@@ -470,7 +470,7 @@ function hashString(value: string): number {
     hash = ((hash << 5) - hash) + value.charCodeAt(i);
     hash |= 0;
   }
-  return Math.abs(hash) || 1;
+  return (hash === -2147483648 ? 2147483647 : Math.abs(hash)) || 1;
 }
 
 function parseTimestamp(timestamp: string | undefined): string {
