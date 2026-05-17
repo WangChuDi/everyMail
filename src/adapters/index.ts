@@ -9,6 +9,7 @@ import { MailpitAdapter } from './mailpit.js';
 import { MoemailAdapter } from './moemail.js';
 import { OutlookEmailPlusAdapter } from './outlookemailplus.js';
 import { ShiroMailAdapter } from './shiromail.js';
+import { SmtpImapAdapter } from './smtpimap.js';
 
 export function createBackendAdapter(): BackendAdapter {
   return createBackendAdapterFor(config.mailBackend);
@@ -32,6 +33,8 @@ export function createBackendAdapterFor(backend: MailBackend): BackendAdapter {
       return new MoemailAdapter();
     case 'outlookemailplus':
       return new OutlookEmailPlusAdapter();
+    case 'smtp_imap':
+      return new SmtpImapAdapter();
     case '2925':
       return new Mail2925Adapter();
     default: {

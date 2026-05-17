@@ -33,10 +33,12 @@ graph LR
         M[moemail]
         N[OutlookEmailPlus]
         P[iCloud Hide My Email]
+        Q[2925]
+        R[SMTP/IMAP]
     end
 
     A & B & C & D & E & F & O -->|Native API| G
-    G -->|Adapter| H & I & J & K & L & M & N & P
+    G -->|Adapter| H & I & J & K & L & M & N & P & Q & R
 ```
 
 ## Table of Contents
@@ -53,7 +55,7 @@ graph LR
 
 ## Features
 
-- **N×M Matrix** — 7 frontend formats × 8 backends, any combination
+- **N×M Matrix** — 7 frontend formats × 10 backends, any combination
 - **Zero-modification access** — Frontend clients connect directly without changes
 - **One-switch backend migration** — Change `MAIL_BACKEND` to switch
 - **Docker one-liner** — Pre-built multi-arch images (amd64/arm64)
@@ -73,6 +75,8 @@ graph LR
 | `moemail` | [moemail](https://github.com/beilunyang/moemail) | Cloudflare Pages + D1 |
 | `outlookemailplus` | [OutlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus) | Controlled External API + mail pool |
 | `icloud_hide_my_email` | [Hide My Email Generator](https://github.com/rtunazzz/hidemyemail-generator) | iCloud forwarding aliases, creation/settings only |
+| `2925` | 2925.com | Shared inbox model using Cookie-based API token retrieval |
+| `smtp_imap` | Standard SMTP/IMAP service | Read/delete mail over IMAP and expose SMTP/IMAP connection settings |
 
 ### Frontend Formats (`ENABLED_FRONTENDS`)
 
@@ -269,6 +273,25 @@ Configuration used when clients connect to the `/shiromail` route:
 | `OUTLOOKEMAILPLUS_FRONTEND_AUTH` | No | Auth key for the OutlookEmailPlus frontend format, defaults to `OUTLOOKEMAILPLUS_AUTH` |
 
 > Target project: [ZeroPointSix/outlookEmailPlus](https://github.com/ZeroPointSix/outlookEmailPlus), using the controlled `/api/external/*` API.
+
+</details>
+
+<details>
+<summary><b>SMTP/IMAP</b></summary>
+
+| Variable | Required | Notes |
+|---|---|---|
+| `SMTP_IMAP_IMAP_HOST` | Yes | IMAP server host |
+| `SMTP_IMAP_IMAP_PORT` | No | IMAP port, defaults to `993` |
+| `SMTP_IMAP_IMAP_TLS` | No | Whether IMAP uses implicit TLS, defaults to `true` |
+| `SMTP_IMAP_SMTP_HOST` | No | SMTP server host exposed through public settings for compatible clients |
+| `SMTP_IMAP_SMTP_PORT` | No | SMTP port, defaults to `587` |
+| `SMTP_IMAP_SMTP_TLS` | No | Whether SMTP requires STARTTLS/secure transport, defaults to `true` |
+| `SMTP_IMAP_USER` | No | Shared IMAP username; empty enables per-address login mode |
+| `SMTP_IMAP_PASS` | No | Shared IMAP password |
+| `SMTP_IMAP_MAILBOX` | No | IMAP folder to read, defaults to `INBOX` |
+
+Shared-account mode maps one aggregate inbox into everyMail and searches messages by recipient address. Per-address mode lets clients log in with the mailbox address and IMAP password; the password is kept only in server-side process memory, so users must log in again after a service restart.
 
 </details>
 
@@ -496,6 +519,24 @@ Backed by the Apple iCloud web private API for Hide My Email alias management:
 
 </details>
 
+<details>
+<summary><b>SMTP/IMAP Mapping</b></summary>
+
+Standard SMTP/IMAP services do not expose a common account-creation REST API, so this adapter projects an IMAP inbox into the everyMail backend model:
+
+| everyMail Semantic | SMTP/IMAP Behavior | Notes |
+|---|---|---|
+| Create mailbox | Compose address and encrypt session locally | Supported only in shared-account mode |
+| Login | Verify IMAP login | Shared mode uses configured credentials; per-address mode uses address + password and creates an in-process session |
+| Settings | Derived from local session | Returns current address and send balance 0 |
+| Message list | IMAP `SEARCH` + `FETCH` | Searches the configured folder by recipient address |
+| Message detail | IMAP UID `FETCH` source | Parsed through `mailparser` into compatible fields |
+| Delete message | IMAP UID delete | Deletes the matching UID |
+| Purge inbox | IMAP search then batch delete | Only deletes messages matching the target address |
+| SMTP | Expose connection settings | The current `BackendAdapter` has no send API, so server-side sending is not performed |
+
+</details>
+
 ## Architecture
 
 ```mermaid
@@ -519,10 +560,12 @@ graph TB
         B6[MoemailAdapter]
         B7[OutlookEmailPlusAdapter]
         B8[ICloudHideMyEmailAdapter]
+        B9[Mail2925Adapter]
+        B10[SmtpImapAdapter]
     end
 
     F1 & F2 & F3 & F4 & F5 & F6 & F7 --> Router{Router}
-    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8
+    Router --> B1 & B2 & B3 & B4 & B5 & B6 & B7 & B8 & B9 & B10
 ```
 
 - **Add a new frontend format**: implement the `FrontendFormat` interface, one file
@@ -536,7 +579,7 @@ src/
 ├── index.ts              # Entry point, registry loop mounting
 ├── config.ts             # Configuration management
 ├── types/                # API type definitions
-├── adapters/             # Backend adapters (8)
+├── adapters/             # Backend adapters (10)
 │   ├── base.ts           # BackendAdapter interface
 │   ├── cloudflare.ts
 │   ├── cloudmail.ts
@@ -545,7 +588,9 @@ src/
 │   ├── mailpit.ts
 │   ├── moemail.ts
 │   ├── outlookemailplus.ts
-│   └── icloudhidemyemail.ts
+│   ├── icloudhidemyemail.ts
+│   ├── 2925.ts
+│   └── smtpimap.ts
 ├── frontend/             # Frontend formats (7)
 │   ├── types.ts          # FrontendFormat interface
 │   ├── index.ts          # Format registry

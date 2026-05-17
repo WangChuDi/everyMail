@@ -9,6 +9,7 @@ import { MailpitAdapter } from './mailpit.js';
 import { MoemailAdapter } from './moemail.js';
 import { OutlookEmailPlusAdapter } from './outlookemailplus.js';
 import { ShiroMailAdapter } from './shiromail.js';
+import { SmtpImapAdapter } from './smtpimap.js';
 import type {
   CfAddressSettings,
   CfMailListResponse,
@@ -663,6 +664,8 @@ function createReadAdapter(backend: Exclude<ICloudHmeReadBackend, 'icloud_web'>)
       return new OutlookEmailPlusAdapter();
     case '2925':
       return new Mail2925Adapter();
+    case 'smtp_imap':
+      return new SmtpImapAdapter();
     default: {
       const exhaustive: never = backend;
       throw new Error(`Unsupported iCloud HME read backend: ${exhaustive}`);
