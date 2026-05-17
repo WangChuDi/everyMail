@@ -135,6 +135,11 @@ function getEnv(key: string, fallback?: string): string {
   throw new Error(`Missing required environment variable: ${key}`);
 }
 
+function getEnvDefaultingBlank(key: string, fallback: string): string {
+  const value = getEnv(key, fallback).trim();
+  return value || fallback;
+}
+
 function parseJsonObject(raw: string): Record<string, string> {
   if (!raw || raw === '{}') return {};
   try {
@@ -271,7 +276,7 @@ export function loadConfig(): AppConfig {
 
     inbucketBaseUrl: getEnv('INBUCKET_BASE_URL', '').replace(/\/+$/, ''),
 
-    icloudHmeBaseUrl: normalizeHttpsUrl(getEnv('ICLOUD_HME_BASE_URL', 'https://p68-maildomainws.icloud.com'), 'ICLOUD_HME_BASE_URL'),
+    icloudHmeBaseUrl: normalizeHttpsUrl(getEnvDefaultingBlank('ICLOUD_HME_BASE_URL', 'https://p68-maildomainws.icloud.com'), 'ICLOUD_HME_BASE_URL'),
     icloudHmeCookie: getEnv('ICLOUD_HME_COOKIE', ''),
     icloudHmeClientId: getEnv('ICLOUD_HME_CLIENT_ID', ''),
     icloudHmeDsid: getEnv('ICLOUD_HME_DSID', ''),
@@ -280,7 +285,7 @@ export function loadConfig(): AppConfig {
     icloudHmeReuseApiKey: getEnv('ICLOUD_HME_REUSE_API_KEY', ''),
     icloudHmeReadBackend: parseICloudHmeReadBackend(getEnv('ICLOUD_HME_READ_BACKEND', '')),
     icloudWebHost,
-    icloudMailBaseUrl: normalizeHttpsUrl(getEnv('ICLOUD_MAIL_BASE_URL', defaultICloudMailBaseUrl), 'ICLOUD_MAIL_BASE_URL'),
+    icloudMailBaseUrl: normalizeHttpsUrl(getEnvDefaultingBlank('ICLOUD_MAIL_BASE_URL', defaultICloudMailBaseUrl), 'ICLOUD_MAIL_BASE_URL'),
     icloudMailFolderGuid: getEnv('ICLOUD_MAIL_FOLDER_GUID', ''),
     icloudMailClientBuildNumber: getEnv('ICLOUD_MAIL_CLIENT_BUILD_NUMBER', '2206Hotfix11'),
     icloudMailClientMasteringNumber: getEnv('ICLOUD_MAIL_CLIENT_MASTERING_NUMBER', getEnv('ICLOUD_MAIL_CLIENT_BUILD_NUMBER', '2206Hotfix11')),
