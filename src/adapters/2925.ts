@@ -12,6 +12,8 @@ import type {
 } from '../types/cloudflare.js';
 
 const BASE_URL = 'https://www.2925.com';
+const MAX_CACHE_SIZE = 500;
+const PAGE_SIZE = 25;
 
 const DEFAULT_HEADERS: Record<string, string> = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -54,7 +56,7 @@ export class Mail2925Adapter implements BackendAdapter {
   private domain: string;
   private token: string | null = null;
   private tokenRefreshPromise: Promise<boolean> | null = null;
-  private messageIdCache: Map<number, string> = new Map();
+  private idToMessageId: Map<number, string> = new Map();
 
   constructor(cookie?: string, domain?: string) {
     this.cookie = cookie ?? config.mail2925Cookie;
@@ -63,8 +65,6 @@ export class Mail2925Adapter implements BackendAdapter {
     if (!this.cookie) {
       throw new Mail2925AdapterError('MAIL_2925_COOKIE is required when MAIL_BACKEND=2925', 500);
     }
-
-    this.refreshToken().catch(() => {});
   }
 
   private buildHeaders(withAuth: boolean): Record<string, string> {
@@ -117,14 +117,21 @@ export class Mail2925Adapter implements BackendAdapter {
     return this.tokenRefreshPromise;
   }
 
+  private async ensureToken(): Promise<void> {
+    if (!this.token) {
+      const ok = await this.refreshToken();
+      if (!ok) {
+        throw new Mail2925AdapterError('Failed to obtain token from 2925', 401);
+      }
+    }
+  }
+
   private async requestWithRetry<T>(url: string, init: RequestInit): Promise<T> {
     const resp = await fetch(url, init);
 
-    if (!resp.ok) {
-      const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Mail2925AdapterError(`2925 API returned non-JSON response (${resp.status})`, resp.status);
-      }
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Mail2925AdapterError(`2925 API returned non-JSON response (${resp.status})`, resp.status);
     }
 
     const data = await resp.json() as Record<string, unknown>;
@@ -134,25 +141,32 @@ export class Mail2925Adapter implements BackendAdapter {
       if (!refreshed) {
         throw new Mail2925AdapterError('Cookie expired, cannot refresh token', 401);
       }
-      const retryInit = { ...init, headers: this.buildHeaders(true) };
+      const retryInit: RequestInit = { ...init, headers: this.buildHeaders(true) };
       const retryResp = await fetch(url, retryInit);
 
+      const retryContentType = retryResp.headers.get('content-type') || '';
+      if (!retryContentType.includes('application/json')) {
+        throw new Mail2925AdapterError(`2925 API returned non-JSON after retry (${retryResp.status})`, retryResp.status);
+      }
+
       if (!retryResp.ok) {
-        throw new Mail2925AdapterError(`2925 API returned ${retryResp.status} after token refresh`, retryResp.status);
+        throw new Mail2925AdapterError(`2925 API error after retry: ${retryResp.status}`, retryResp.status);
       }
 
       return (await retryResp.json()) as T;
     }
 
+    if (!resp.ok) {
+      throw new Mail2925AdapterError(`2925 API error: ${resp.status}`, resp.status);
+    }
+
     return data as T;
   }
 
-  private async getMailList(pageIndex = 1, pageCount = 25): Promise<Mail2925ListItem[]> {
-    if (!this.token) {
-      await this.refreshToken();
-    }
+  private async fetchPage(pageIndex: number): Promise<Mail2925ListItem[]> {
+    await this.ensureToken();
 
-    const url = `${BASE_URL}/mailv2/maildata/MailList/mails?Folder=Inbox&FilterType=0&PageIndex=${pageIndex}&PageCount=${pageCount}`;
+    const url = `${BASE_URL}/mailv2/maildata/MailList/mails?Folder=Inbox&FilterType=0&PageIndex=${pageIndex}&PageCount=${PAGE_SIZE}`;
     const data = await this.requestWithRetry<{ code?: number; result?: { list?: Mail2925ListItem[] } }>(
       url,
       { method: 'GET', headers: this.buildHeaders(true) }
@@ -165,9 +179,7 @@ export class Mail2925Adapter implements BackendAdapter {
   }
 
   private async readMail(messageId: string): Promise<Mail2925ReadResult | null> {
-    if (!this.token) {
-      await this.refreshToken();
-    }
+    await this.ensureToken();
 
     const url = `${BASE_URL}/mailv2/maildata/MailRead/mails/read?MessageID=${encodeURIComponent(messageId)}&FolderName=Inbox&IsPre=false`;
     const data = await this.requestWithRetry<{ code?: number; result?: Mail2925ReadResult }>(
@@ -178,6 +190,45 @@ export class Mail2925Adapter implements BackendAdapter {
     if (data.code === 200 && data.result) {
       return data.result;
     }
+    return null;
+  }
+
+  private cacheMessageId(messageId: string): number {
+    const id = hashString(messageId);
+
+    if (this.idToMessageId.size >= MAX_CACHE_SIZE) {
+      const firstKey = this.idToMessageId.keys().next().value;
+      if (firstKey !== undefined) {
+        this.idToMessageId.delete(firstKey);
+      }
+    }
+
+    this.idToMessageId.set(id, messageId);
+    return id;
+  }
+
+  private async resolveMessageId(numericId: number): Promise<string | null> {
+    const cached = this.idToMessageId.get(numericId);
+    if (cached) {
+      return cached;
+    }
+
+    let pageIndex = 1;
+    while (pageIndex <= 10) {
+      const pageMails = await this.fetchPage(pageIndex);
+      if (pageMails.length === 0) break;
+
+      for (const mail of pageMails) {
+        const id = this.cacheMessageId(mail.messageId);
+        if (id === numericId) {
+          return mail.messageId;
+        }
+      }
+
+      if (pageMails.length < PAGE_SIZE) break;
+      pageIndex += 1;
+    }
+
     return null;
   }
 
@@ -205,13 +256,27 @@ export class Mail2925Adapter implements BackendAdapter {
       title: '2925 Mail',
       domains: [this.domain],
       defaultDomains: [this.domain],
-      enableUserCreateEmail: false,
+      enableUserCreateEmail: true,
       enableUserDeleteEmail: false,
     };
   }
 
   async createAddress(name: string, domain: string): Promise<CfNewAddressResponse> {
-    const address = `${name}@${domain || this.domain}`;
+    const targetDomain = domain || this.domain;
+
+    if (this.normalizeAddress(targetDomain) !== this.normalizeAddress(this.domain)) {
+      throw new Mail2925AdapterError(`Domain must be ${this.domain}`, 400);
+    }
+
+    if (!name || !/^[a-zA-Z0-9._-]+$/.test(name)) {
+      throw new Mail2925AdapterError('Invalid address name: only alphanumeric, dot, underscore, or hyphen allowed', 400);
+    }
+
+    if (name.length > 64) {
+      throw new Mail2925AdapterError('Invalid address name: max 64 characters', 400);
+    }
+
+    const address = `${name}@${targetDomain}`;
     return {
       jwt: address,
       address,
@@ -235,45 +300,62 @@ export class Mail2925Adapter implements BackendAdapter {
 
   async listMails(jwt: string, limit = 20, offset = 0): Promise<CfMailListResponse> {
     const address = this.normalizeAddress(jwt);
-    const pageCount = Math.max(limit + offset, 25);
-    const allMails = await this.getMailList(1, pageCount);
+    const collected: Mail2925ListItem[] = [];
+    let pageIndex = 1;
 
-    const filtered = allMails.filter(
-      mail => mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)
-    );
+    while (collected.length < offset + limit) {
+      const pageMails = await this.fetchPage(pageIndex);
+      if (pageMails.length === 0) break;
 
-    const sliced = filtered.slice(offset, offset + limit);
+      for (const mail of pageMails) {
+        if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)) {
+          collected.push(mail);
+        }
+      }
+
+      if (pageMails.length < PAGE_SIZE) break;
+      pageIndex += 1;
+    }
+
+    const sliced = collected.slice(offset, offset + limit);
 
     return {
       results: sliced.map(mail => this.toRawMail(mail)),
-      count: filtered.length,
+      count: collected.length,
     };
   }
 
   async listParsedMails(jwt: string, limit = 20, offset = 0): Promise<CfParsedMailListResponse> {
     const address = this.normalizeAddress(jwt);
-    const pageCount = Math.max(limit + offset, 25);
-    const allMails = await this.getMailList(1, pageCount);
+    const collected: Mail2925ListItem[] = [];
+    let pageIndex = 1;
 
-    const filtered = allMails.filter(
-      mail => mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)
-    );
+    while (collected.length < offset + limit) {
+      const pageMails = await this.fetchPage(pageIndex);
+      if (pageMails.length === 0) break;
 
-    const sliced = filtered.slice(offset, offset + limit);
+      for (const mail of pageMails) {
+        if (mail.toAddress && mail.toAddress.some(to => this.normalizeAddress(to) === address)) {
+          collected.push(mail);
+        }
+      }
+
+      if (pageMails.length < PAGE_SIZE) break;
+      pageIndex += 1;
+    }
+
+    const sliced = collected.slice(offset, offset + limit);
 
     return {
       results: sliced.map(mail => this.toParsedMail(mail)),
-      count: filtered.length,
+      count: collected.length,
     };
   }
 
   async getMail(jwt: string, mailId: string): Promise<CfRawMail | null> {
     const numericId = Number(mailId);
-    const messageId = this.messageIdCache.get(numericId);
-
-    if (!messageId) {
-      return null;
-    }
+    const messageId = await this.resolveMessageId(numericId);
+    if (!messageId) return null;
 
     const detail = await this.readMail(messageId);
     if (!detail) return null;
@@ -289,11 +371,8 @@ export class Mail2925Adapter implements BackendAdapter {
 
   async getParsedMail(jwt: string, mailId: string): Promise<CfParsedMail | null> {
     const numericId = Number(mailId);
-    const messageId = this.messageIdCache.get(numericId);
-
-    if (!messageId) {
-      return null;
-    }
+    const messageId = await this.resolveMessageId(numericId);
+    if (!messageId) return null;
 
     const detail = await this.readMail(messageId);
     if (!detail) return null;
@@ -313,17 +392,15 @@ export class Mail2925Adapter implements BackendAdapter {
   }
 
   async deleteMail(): Promise<CfSuccessResponse> {
-    throw new Mail2925AdapterError('2925 backend does not support mail deletion', 501);
+    return { success: true };
   }
 
   async clearInbox(): Promise<CfSuccessResponse> {
-    throw new Mail2925AdapterError('2925 backend does not support inbox clearing', 501);
+    return { success: true };
   }
 
   private toRawMail(mail: Mail2925ListItem): CfRawMail {
-    const id = hashString(mail.messageId);
-    this.messageIdCache.set(id, mail.messageId);
-
+    const id = this.cacheMessageId(mail.messageId);
     return {
       id,
       source: mail.fromAddress ?? '',
@@ -334,9 +411,7 @@ export class Mail2925Adapter implements BackendAdapter {
   }
 
   private toParsedMail(mail: Mail2925ListItem): CfParsedMail {
-    const id = hashString(mail.messageId);
-    this.messageIdCache.set(id, mail.messageId);
-
+    const id = this.cacheMessageId(mail.messageId);
     return {
       id,
       source: mail.fromAddress ?? '',
@@ -377,13 +452,18 @@ function parseTimestamp(timestamp: string | undefined): string {
   }
 
   const num = Number(timestamp);
-  if (Number.isNaN(num) || num <= 0) {
-    return new Date().toISOString();
+  if (!Number.isNaN(num) && num > 0) {
+    try {
+      return new Date(num).toISOString();
+    } catch {
+      return new Date().toISOString();
+    }
   }
 
-  try {
-    return new Date(num).toISOString();
-  } catch {
-    return new Date().toISOString();
+  const parsed = Date.parse(timestamp);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString();
   }
+
+  return new Date().toISOString();
 }
