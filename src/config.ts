@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925';
+export type MailBackend = 'cloudflare_temp_email' | 'cloudmail' | 'shiromail' | 'inbucket' | 'mailpit' | 'moemail' | 'outlookemailplus' | '2925' | 'smtp_imap';
 
 export interface AppConfig {
   /** 监听地址 */
@@ -88,6 +88,27 @@ export interface AppConfig {
   /** 2925.com 域名（用于合成邮箱地址） */
   mail2925Domain: string;
 
+  // ===== SMTP/IMAP 侧 =====
+
+  /** IMAP server host */
+  smtpImapImapHost: string;
+  /** IMAP server port */
+  smtpImapImapPort: number;
+  /** IMAP connection uses implicit TLS */
+  smtpImapImapTls: boolean;
+  /** SMTP server host exposed to compatible clients */
+  smtpImapSmtpHost: string;
+  /** SMTP server port exposed to compatible clients */
+  smtpImapSmtpPort: number;
+  /** SMTP connection should use STARTTLS/secure transport */
+  smtpImapSmtpTls: boolean;
+  /** Shared IMAP username */
+  smtpImapUser: string;
+  /** Shared IMAP password */
+  smtpImapPass: string;
+  /** IMAP mailbox folder to read */
+  smtpImapMailbox: string;
+
   // ===== 内部 =====
 
   /** 本地 JWT 签名密钥 */
@@ -121,8 +142,26 @@ function parseJsonObject(raw: string): Record<string, string> {
   }
 }
 
+function parseBoolean(raw: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+function parsePort(raw: string, key: string): number {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`[config] ${key} must be an integer port between 1 and 65535`);
+  }
+
+  const port = Number.parseInt(trimmed, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`[config] ${key} must be an integer port between 1 and 65535`);
+  }
+
+  return port;
+}
+
 const VALID_BACKENDS: readonly MailBackend[] = [
-  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', '2925',
+  'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', '2925', 'smtp_imap',
 ];
 
 function parseMailBackend(raw: string): MailBackend {
@@ -190,6 +229,16 @@ export function loadConfig(): AppConfig {
 
     mail2925Cookie: getEnv('MAIL_2925_COOKIE', ''),
     mail2925Domain: getEnv('MAIL_2925_DOMAIN', '2925.com'),
+
+    smtpImapImapHost: getEnv('SMTP_IMAP_IMAP_HOST', ''),
+    smtpImapImapPort: parsePort(getEnv('SMTP_IMAP_IMAP_PORT', '993'), 'SMTP_IMAP_IMAP_PORT'),
+    smtpImapImapTls: parseBoolean(getEnv('SMTP_IMAP_IMAP_TLS', 'true')),
+    smtpImapSmtpHost: getEnv('SMTP_IMAP_SMTP_HOST', ''),
+    smtpImapSmtpPort: parsePort(getEnv('SMTP_IMAP_SMTP_PORT', '587'), 'SMTP_IMAP_SMTP_PORT'),
+    smtpImapSmtpTls: parseBoolean(getEnv('SMTP_IMAP_SMTP_TLS', 'true')),
+    smtpImapUser: getEnv('SMTP_IMAP_USER', ''),
+    smtpImapPass: getEnv('SMTP_IMAP_PASS', ''),
+    smtpImapMailbox: getEnv('SMTP_IMAP_MAILBOX', 'INBOX'),
 
     enabledFrontends: parseFrontends(getEnv('ENABLED_FRONTENDS', 'shiromail,cloudflare')),
 
