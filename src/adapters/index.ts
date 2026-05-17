@@ -7,6 +7,7 @@ import { MailpitAdapter } from './mailpit.js';
 import { MoemailAdapter } from './moemail.js';
 import { OutlookEmailPlusAdapter } from './outlookemailplus.js';
 import { ShiroMailAdapter } from './shiromail.js';
+import { SmtpImapAdapter } from './smtpimap.js';
 
 export function createBackendAdapter(): BackendAdapter {
   switch (config.mailBackend) {
@@ -24,6 +25,8 @@ export function createBackendAdapter(): BackendAdapter {
       return new MoemailAdapter();
     case 'outlookemailplus':
       return new OutlookEmailPlusAdapter();
+    case 'smtp_imap':
+      return new SmtpImapAdapter();
     default: {
       const exhaustive: never = config.mailBackend;
       throw new Error(`Unsupported mail backend: ${exhaustive}`);
