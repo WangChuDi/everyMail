@@ -139,6 +139,20 @@ function parseBoolean(raw: string): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
+function parsePort(raw: string, key: string): number {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`[config] ${key} must be an integer port between 1 and 65535`);
+  }
+
+  const port = Number.parseInt(trimmed, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`[config] ${key} must be an integer port between 1 and 65535`);
+  }
+
+  return port;
+}
+
 const VALID_BACKENDS: readonly MailBackend[] = [
   'cloudflare_temp_email', 'cloudmail', 'shiromail', 'inbucket', 'mailpit', 'moemail', 'outlookemailplus', 'smtp_imap',
 ];
@@ -207,10 +221,10 @@ export function loadConfig(): AppConfig {
     outlookEmailPlusFrontendAuth: getEnv('OUTLOOKEMAILPLUS_FRONTEND_AUTH', getEnv('OUTLOOKEMAILPLUS_AUTH', '')),
 
     smtpImapImapHost: getEnv('SMTP_IMAP_IMAP_HOST', ''),
-    smtpImapImapPort: parseInt(getEnv('SMTP_IMAP_IMAP_PORT', '993'), 10),
+    smtpImapImapPort: parsePort(getEnv('SMTP_IMAP_IMAP_PORT', '993'), 'SMTP_IMAP_IMAP_PORT'),
     smtpImapImapTls: parseBoolean(getEnv('SMTP_IMAP_IMAP_TLS', 'true')),
     smtpImapSmtpHost: getEnv('SMTP_IMAP_SMTP_HOST', ''),
-    smtpImapSmtpPort: parseInt(getEnv('SMTP_IMAP_SMTP_PORT', '587'), 10),
+    smtpImapSmtpPort: parsePort(getEnv('SMTP_IMAP_SMTP_PORT', '587'), 'SMTP_IMAP_SMTP_PORT'),
     smtpImapSmtpTls: parseBoolean(getEnv('SMTP_IMAP_SMTP_TLS', 'true')),
     smtpImapUser: getEnv('SMTP_IMAP_USER', ''),
     smtpImapPass: getEnv('SMTP_IMAP_PASS', ''),

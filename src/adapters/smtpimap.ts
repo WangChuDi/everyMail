@@ -43,6 +43,7 @@ interface StoredSession {
 
 const TOKEN_PREFIX = 'smtpimap.v1.';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_SESSION_COUNT = 1000;
 const sessionStore = new Map<string, StoredSession>();
 
 export class SmtpImapAdapter implements BackendAdapter {
@@ -294,6 +295,8 @@ export class SmtpImapAdapter implements BackendAdapter {
   }
 
   private decodeSession(token: string): SmtpImapSession {
+    pruneExpiredSessions();
+
     if (!token.startsWith(TOKEN_PREFIX)) {
       throw new SmtpImapAdapterError('Invalid SMTP/IMAP session token', 401);
     }
@@ -329,6 +332,8 @@ export class SmtpImapAdapter implements BackendAdapter {
           sessionStore.delete(parsed.sessionId);
           throw new SmtpImapAdapterError('SMTP/IMAP session expired', 401);
         }
+        sessionStore.delete(parsed.sessionId);
+        sessionStore.set(parsed.sessionId, stored);
         return stored.session;
       }
 
@@ -542,6 +547,7 @@ function createSessionId(session: SmtpImapSession, expiresAt: number): string {
   pruneExpiredSessions();
   const sessionId = randomBytes(32).toString('base64url');
   sessionStore.set(sessionId, { session, expiresAt });
+  evictOldestSessions();
   return sessionId;
 }
 
@@ -551,6 +557,16 @@ function pruneExpiredSessions(): void {
     if (stored.expiresAt <= now) {
       sessionStore.delete(sessionId);
     }
+  }
+}
+
+function evictOldestSessions(): void {
+  while (sessionStore.size > MAX_SESSION_COUNT) {
+    const oldestSessionId = sessionStore.keys().next().value;
+    if (oldestSessionId === undefined) {
+      return;
+    }
+    sessionStore.delete(oldestSessionId);
   }
 }
 
