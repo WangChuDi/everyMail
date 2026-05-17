@@ -1,6 +1,7 @@
-import express, { Router } from 'express';
+import express, { Router, type NextFunction, type Request, type Response } from 'express';
 import { config, getMappedDomains, type MailBackend } from './config.js';
 import { createBackendAdapter } from './adapters/index.js';
+import { ICloudHideMyEmailAdapter } from './adapters/icloudhidemyemail.js';
 import { requestLogger } from './middleware/logger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { resolveFormats } from './frontend/index.js';
@@ -53,6 +54,32 @@ for (const format of formats) {
   app.use(format.routePrefix, subRouter);
 }
 
+if (adapter instanceof ICloudHideMyEmailAdapter) {
+  const icloudRouter = Router();
+  icloudRouter.use(requireICloudHmeReuseApiKey);
+
+  icloudRouter.get('/aliases', async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const aliases = await adapter.listReusableAliases();
+      res.json({ aliases, count: aliases.length });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  icloudRouter.post('/reuse', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const address = typeof req.body.address === 'string' ? req.body.address : '';
+      const reused = await adapter.reuseAddress(address);
+      res.json(reused);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.use('/icloud-hme', icloudRouter);
+}
+
 app.get('/health', (_req, res) => {
   const domains = getMappedDomains();
   res.json({
@@ -68,6 +95,25 @@ app.get('/health', (_req, res) => {
 });
 
 app.use(errorHandler);
+
+function requireICloudHmeReuseApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (!config.icloudHmeReuseApiKey) {
+    res.status(403).json({ error: 'ICLOUD_HME_REUSE_API_KEY is required to enable iCloud HME alias reuse routes' });
+    return;
+  }
+
+  const bearer = req.header('authorization')?.startsWith('Bearer ')
+    ? req.header('authorization')?.slice(7)
+    : undefined;
+  const apiKey = req.header('X-API-Key') ?? bearer ?? '';
+
+  if (apiKey !== config.icloudHmeReuseApiKey) {
+    res.status(401).json({ error: 'Invalid iCloud HME reuse API key' });
+    return;
+  }
+
+  next();
+}
 
 const domainEntries = getMappedDomains();
 const domainStatus = domainEntries.length > 0
